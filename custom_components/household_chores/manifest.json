@@ -1,0 +1,17 @@
+{
+  "domain": "household_chores",
+  "name": "Household Chores",
+  "codeowners": [
+    "@nikolajflojgaard"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/nikolajflojgaard/homeassistant-household-chores",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/nikolajflojgaard/homeassistant-household-chores/issues",
+  "loggers": [
+    "custom_components.household_chores"
+  ],
+  "requirements": [],
+  "version": "0.1.0"
+}

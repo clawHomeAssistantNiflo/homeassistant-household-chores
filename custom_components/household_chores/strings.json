@@ -1,0 +1,51 @@
+{
+  "title": "Household Chores",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up household chores",
+        "description": "Create a weekly chore calendar for your household.",
+        "data": {
+          "name": "Household name",
+          "members": "Members (comma-separated)",
+          "chores": "Chores (comma-separated)"
+        }
+      }
+    },
+    "error": {
+      "members_required": "At least one member is required.",
+      "chores_required": "At least one chore is required."
+    },
+    "abort": {
+      "already_configured": "This household is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Edit household chores",
+        "data": {
+          "name": "Household name",
+          "members": "Members (comma-separated)",
+          "chores": "Chores (comma-separated)"
+        }
+      }
+    },
+    "error": {
+      "members_required": "At least one member is required.",
+      "chores_required": "At least one chore is required."
+    }
+  },
+  "entity": {
+    "calendar": {
+      "schedule": {
+        "name": "Schedule"
+      }
+    },
+    "sensor": {
+      "next_chore": {
+        "name": "Next chore"
+      }
+    }
+  }
+}
