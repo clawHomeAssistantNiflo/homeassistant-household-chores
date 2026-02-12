@@ -65,9 +65,6 @@ The screenshots below are updated with each UI/layout release.
 ### Tablet overview
 ![Tablet weekly board](docs/screenshots/weekly-board-tablet.png)
 
-### Compact/mobile layout
-![Mobile weekly board](docs/screenshots/weekly-board-mobile.png)
-
 ### Drag and drop between days
 ![Drag and drop state](docs/screenshots/weekly-board-drag-drop.png)
 
