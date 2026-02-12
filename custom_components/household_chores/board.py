@@ -8,9 +8,10 @@ from typing import Any
 from uuid import uuid4
 
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import DOMAIN, SIGNAL_BOARD_UPDATED
 
 WEEKDAY_COLUMNS = [
     "monday",
@@ -90,6 +91,7 @@ class HouseholdBoardStore:
         """Persist normalized board state."""
         self._data = self._normalize_board(board)
         await self._store.async_save(self._data)
+        async_dispatcher_send(self._hass, f"{SIGNAL_BOARD_UPDATED}_{self._entry_id}")
         return self._data
 
     async def async_remove_done_tasks(self) -> int:

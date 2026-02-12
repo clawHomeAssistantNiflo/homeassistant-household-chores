@@ -209,12 +209,40 @@ class HouseholdChoresCard extends HTMLElement {
     try {
       const result = await this._callBoardWs({ type: "household_chores/get_board", entry_id: this._config.entry_id });
       this._board = this._normalizeBoard(result.board || { people: [], tasks: [], templates: [] });
+      this._error = "";
     } catch (err) {
-      this._error = `Failed to load board: ${err?.message || err}`;
+      const message = String(err?.message || err || "");
+      if (message.toLowerCase().includes("unknown command")) {
+        const fallbackBoard = this._loadBoardFromStateEntity();
+        if (fallbackBoard) {
+          this._board = this._normalizeBoard(fallbackBoard);
+          this._error = "";
+        } else {
+          this._error = "Failed to load board: backend command unavailable and no board state entity found.";
+        }
+      } else {
+        this._error = `Failed to load board: ${message}`;
+      }
     } finally {
       this._loading = false;
       this._render();
     }
+  }
+
+  _loadBoardFromStateEntity() {
+    if (!this._hass || !this._hass.states) return null;
+    const states = this._hass.states;
+    const entries = Object.entries(states);
+    for (const [entityId, state] of entries) {
+      if (!entityId.startsWith("sensor.")) continue;
+      if (!entityId.endsWith("_board_state")) continue;
+      const attrs = state?.attributes || {};
+      if (attrs.entry_id !== this._config.entry_id) continue;
+      const board = attrs.board;
+      if (!board || typeof board !== "object") continue;
+      return board;
+    }
+    return null;
   }
 
   async _saveBoard() {

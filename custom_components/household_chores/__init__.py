@@ -41,8 +41,7 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
     domain_data.setdefault("boards", {})
     domain_data.setdefault("entry_unsubs", {})
     if not domain_data.get("ws_registered"):
-        async_register_ws(hass)
-        domain_data["ws_registered"] = True
+        _try_register_ws(hass, domain_data)
     if not domain_data.get("card_registered"):
         await async_register_card(hass)
         domain_data["card_registered"] = True
@@ -71,6 +70,15 @@ def _as_int(raw: Any, fallback: int) -> int:
         return fallback
 
 
+def _try_register_ws(hass: HomeAssistant, domain_data: dict[str, Any]) -> None:
+    """Try websocket registration but keep integration running on failure."""
+    try:
+        async_register_ws(hass)
+        domain_data["ws_registered"] = True
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("Websocket registration failed, using fallback paths: %s", err)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Household Chores from a config entry."""
     domain_data = hass.data.setdefault(DOMAIN, {})
@@ -78,8 +86,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     domain_data.setdefault("boards", {})
     domain_data.setdefault("entry_unsubs", {})
     if not domain_data.get("ws_registered"):
-        async_register_ws(hass)
-        domain_data["ws_registered"] = True
+        _try_register_ws(hass, domain_data)
     if not domain_data.get("card_registered"):
         await async_register_card(hass)
         domain_data["card_registered"] = True

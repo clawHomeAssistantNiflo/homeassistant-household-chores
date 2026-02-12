@@ -76,6 +76,8 @@ The screenshots below are updated with each UI/layout release.
 - JS resource is auto versioned (`?v=<manifest version>`) to reduce browser cache issues after updates.
 - If you update from older versions, restart Home Assistant to reload websocket commands/resources.
 - Save operations now include a fallback service (`household_chores.save_board`) if websocket save command is unavailable in runtime.
+- Load operations include a fallback via `sensor.*_board_state` attributes if websocket load command is unavailable.
+- `People` and board data are persisted in Home Assistant storage and shared across clients/devices.
 - Default chores/members entered during integration setup are used as starter board data.
 - The card layout is optimized for tablet-sized dashboards (including iPad-width screens).
 - Tasks moved to `Done` are automatically deleted nightly at `03:00` (Home Assistant local time).
