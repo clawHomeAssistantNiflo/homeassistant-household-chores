@@ -637,8 +637,8 @@ class HouseholdChoresCard extends HTMLElement {
         .assignees label { display: flex; align-items: center; gap: 5px; font-size: 0.78rem; }
 
         .columns-wrap { display: grid; gap: 10px; }
-        .week-scroll { overflow-x: auto; padding-bottom: 2px; }
-        .week-columns { display: grid; grid-template-columns: repeat(7, minmax(170px, 1fr)); gap: 8px; min-width: 860px; }
+        .week-scroll { overflow-x: hidden; padding-bottom: 2px; }
+        .week-columns { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; min-width: 0; }
         .side-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
         .column {
@@ -752,8 +752,10 @@ class HouseholdChoresCard extends HTMLElement {
 
         @media (max-width: 900px) {
           .top { grid-template-columns: 1fr; }
-          .week-columns { min-width: 820px; }
+          .week-columns { grid-template-columns: repeat(7, minmax(0, 1fr)); }
           .side-columns { grid-template-columns: 1fr; }
+          .column h3 { font-size: 0.78rem; }
+          .task-title { font-size: 0.75rem; }
         }
       </style>
 

@@ -5,6 +5,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
 ## What you get
 
 - Main week row: Monday to Sunday
+- Weekday columns are compressed to fit screen width (no horizontal week scroll)
 - Secondary row: Backlog + Done in a 2-column grid below the week
 - People with unique colored circular badges and first-letter initials
 - Compact mobile-first actions: `People` and `Add task` buttons open modal forms
@@ -69,6 +70,7 @@ The screenshots below are updated with each UI/layout release.
 ## Notes
 
 - The custom card JavaScript is auto-registered by the integration at startup.
+- If you update from older versions, restart Home Assistant to reload websocket commands/resources.
 - Default chores/members entered during integration setup are used as starter board data.
 - The card layout is optimized for tablet-sized dashboards (including iPad-width screens).
 - Tasks moved to `Done` are automatically deleted nightly at `03:00` (Home Assistant local time).
