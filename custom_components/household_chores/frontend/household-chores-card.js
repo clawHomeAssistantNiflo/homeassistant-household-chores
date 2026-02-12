@@ -15,13 +15,16 @@ class HouseholdChoresCard extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._hass = null;
     this._config = null;
-    this._board = { people: [], tasks: [] };
+    this._board = { people: [], tasks: [], templates: [] };
     this._loading = true;
     this._saving = false;
     this._error = "";
     this._newPersonName = "";
     this._newTaskTitle = "";
     this._newTaskColumn = "backlog";
+    this._newTaskEndDate = "";
+    this._newTaskFixed = false;
+    this._newTaskWeekdays = [];
     this._dragTaskId = "";
     this._dragOverColumn = "";
   }
@@ -47,90 +50,6 @@ class HouseholdChoresCard extends HTMLElement {
     return 8;
   }
 
-  async _resolveEntryId() {
-    if (!this._hass || this._config.entry_id) return;
-    try {
-      const result = await this._hass.callWS({ type: "household_chores/list_entries" });
-      const entries = result?.entries || [];
-      if (entries.length === 1) {
-        this._config.entry_id = entries[0].entry_id;
-      }
-    } catch (_err) {
-      // No-op: a friendly error is shown during load.
-    }
-  }
-
-  async _loadBoard() {
-    if (!this._hass || !this._config) return;
-    if (!this._config.entry_id) {
-      await this._resolveEntryId();
-      if (!this._config.entry_id) {
-        this._error = "Set entry_id in card config or keep only one Household Chores integration entry.";
-        this._loading = false;
-        this._render();
-        return;
-      }
-    }
-
-    this._loading = true;
-    this._error = "";
-    this._render();
-    try {
-      const result = await this._hass.callWS({
-        type: "household_chores/get_board",
-        entry_id: this._config.entry_id,
-      });
-      this._board = this._normalizeBoard(result.board || { people: [], tasks: [] });
-    } catch (err) {
-      this._error = `Failed to load board: ${err?.message || err}`;
-    } finally {
-      this._loading = false;
-      this._render();
-    }
-  }
-
-  async _saveBoard() {
-    if (!this._hass || !this._config?.entry_id) return;
-    this._saving = true;
-    this._error = "";
-    this._render();
-    try {
-      const result = await this._hass.callWS({
-        type: "household_chores/save_board",
-        entry_id: this._config.entry_id,
-        board: this._board,
-      });
-      this._board = this._normalizeBoard(result.board || this._board);
-    } catch (err) {
-      this._error = `Failed to save board: ${err?.message || err}`;
-    } finally {
-      this._saving = false;
-      this._render();
-    }
-  }
-
-  _normalizeBoard(board) {
-    const people = Array.isArray(board.people) ? board.people : [];
-    const tasks = Array.isArray(board.tasks) ? board.tasks : [];
-    return {
-      people: people.map((person, index) => ({
-        id: person.id || `person_${index}`,
-        name: (person.name || "Person").trim() || "Person",
-        color: person.color || this._autoColor(index),
-      })),
-      tasks: tasks
-        .map((task, index) => ({
-          id: task.id || `task_${index}`,
-          title: (task.title || "").trim(),
-          assignees: Array.isArray(task.assignees) ? task.assignees : [],
-          column: this._columns().some((column) => column.key === task.column) ? task.column : "backlog",
-          order: Number.isFinite(task.order) ? task.order : index,
-          created_at: task.created_at || new Date().toISOString(),
-        }))
-        .filter((task) => task.title),
-    };
-  }
-
   _columns() {
     return [
       { key: "backlog", label: "Backlog" },
@@ -142,6 +61,18 @@ class HouseholdChoresCard extends HTMLElement {
       { key: "saturday", label: "Sat" },
       { key: "sunday", label: "Sun" },
       { key: "done", label: "Done" },
+    ];
+  }
+
+  _weekdayKeys() {
+    return [
+      { key: "monday", short: "M" },
+      { key: "tuesday", short: "T" },
+      { key: "wednesday", short: "W" },
+      { key: "thursday", short: "T" },
+      { key: "friday", short: "F" },
+      { key: "saturday", short: "S" },
+      { key: "sunday", short: "S" },
     ];
   }
 
@@ -163,10 +94,145 @@ class HouseholdChoresCard extends HTMLElement {
       .replaceAll("'", "&#039;");
   }
 
+  _todayIsoDate() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  _startOfWeek(baseDate = new Date()) {
+    const d = new Date(baseDate);
+    const day = d.getDay(); // Sun=0 .. Sat=6
+    const diff = (day + 6) % 7; // Monday-based offset
+    d.setDate(d.getDate() - diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  _weekdayDateForCurrentWeek(weekdayKey) {
+    const weekStart = this._startOfWeek();
+    const index = this._weekdayKeys().findIndex((item) => item.key === weekdayKey);
+    if (index < 0) return null;
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + index);
+    return d;
+  }
+
+  _toIsoDate(dateObj) {
+    return dateObj.toISOString().slice(0, 10);
+  }
+
+  async _resolveEntryId() {
+    if (!this._hass || this._config.entry_id) return;
+    try {
+      const result = await this._hass.callWS({ type: "household_chores/list_entries" });
+      const entries = result?.entries || [];
+      if (entries.length === 1) {
+        this._config.entry_id = entries[0].entry_id;
+      }
+    } catch (_err) {
+      // Friendly error handled in _loadBoard.
+    }
+  }
+
+  _normalizeBoard(board) {
+    const people = Array.isArray(board.people) ? board.people : [];
+    const tasks = Array.isArray(board.tasks) ? board.tasks : [];
+    const templates = Array.isArray(board.templates) ? board.templates : [];
+    const validColumns = this._columns().map((column) => column.key);
+
+    return {
+      people: people.map((person, index) => ({
+        id: person.id || `person_${index}`,
+        name: (person.name || "Person").trim() || "Person",
+        color: person.color || this._autoColor(index),
+      })),
+      tasks: tasks
+        .map((task, index) => ({
+          id: task.id || `task_${index}`,
+          title: (task.title || "").trim(),
+          assignees: Array.isArray(task.assignees) ? task.assignees : [],
+          column: validColumns.includes(task.column) ? task.column : "backlog",
+          order: Number.isFinite(task.order) ? task.order : index,
+          created_at: task.created_at || new Date().toISOString(),
+          end_date: task.end_date || "",
+          template_id: task.template_id || "",
+          fixed: Boolean(task.fixed),
+        }))
+        .filter((task) => task.title),
+      templates: templates
+        .map((tpl, index) => ({
+          id: tpl.id || `tpl_${index}`,
+          title: (tpl.title || "").trim(),
+          assignees: Array.isArray(tpl.assignees) ? tpl.assignees : [],
+          end_date: tpl.end_date || "",
+          weekdays: Array.isArray(tpl.weekdays) ? tpl.weekdays.filter((day) => this._weekdayKeys().some((w) => w.key === day)) : [],
+          created_at: tpl.created_at || new Date().toISOString(),
+        }))
+        .filter((tpl) => tpl.title && tpl.end_date && tpl.weekdays.length),
+    };
+  }
+
+  async _loadBoard() {
+    if (!this._hass || !this._config) return;
+    if (!this._config.entry_id) {
+      await this._resolveEntryId();
+      if (!this._config.entry_id) {
+        this._error = "Set entry_id in card config or keep only one Household Chores integration entry.";
+        this._loading = false;
+        this._render();
+        return;
+      }
+    }
+
+    this._loading = true;
+    this._error = "";
+    this._render();
+
+    try {
+      const result = await this._hass.callWS({
+        type: "household_chores/get_board",
+        entry_id: this._config.entry_id,
+      });
+      this._board = this._normalizeBoard(result.board || { people: [], tasks: [], templates: [] });
+    } catch (err) {
+      this._error = `Failed to load board: ${err?.message || err}`;
+    } finally {
+      this._loading = false;
+      this._render();
+    }
+  }
+
+  async _saveBoard() {
+    if (!this._hass || !this._config?.entry_id) return;
+    this._saving = true;
+    this._error = "";
+    this._render();
+
+    try {
+      const result = await this._hass.callWS({
+        type: "household_chores/save_board",
+        entry_id: this._config.entry_id,
+        board: this._board,
+      });
+      this._board = this._normalizeBoard(result.board || this._board);
+    } catch (err) {
+      this._error = `Failed to save board: ${err?.message || err}`;
+    } finally {
+      this._saving = false;
+      this._render();
+    }
+  }
+
   _tasksForColumn(column) {
     return this._board.tasks
       .filter((task) => task.column === column)
       .sort((a, b) => a.order - b.order || a.created_at.localeCompare(b.created_at));
+  }
+
+  _renumberColumn(columnKey) {
+    const tasks = this._tasksForColumn(columnKey);
+    tasks.forEach((task, index) => {
+      task.order = index;
+    });
   }
 
   _onPersonNameInput(ev) {
@@ -192,6 +258,7 @@ class HouseholdChoresCard extends HTMLElement {
         color,
       },
     ];
+
     this._newPersonName = "";
     this._render();
     await this._saveBoard();
@@ -205,6 +272,56 @@ class HouseholdChoresCard extends HTMLElement {
     this._newTaskColumn = ev.target.value;
   }
 
+  _onTaskEndDateInput(ev) {
+    this._newTaskEndDate = ev.target.value;
+  }
+
+  _onTaskFixedInput(ev) {
+    this._newTaskFixed = Boolean(ev.target.checked);
+    if (!this._newTaskFixed) {
+      this._newTaskWeekdays = [];
+    }
+    this._render();
+  }
+
+  _toggleWeekday(dayKey) {
+    if (!this._newTaskFixed) return;
+    if (this._newTaskWeekdays.includes(dayKey)) {
+      this._newTaskWeekdays = this._newTaskWeekdays.filter((day) => day !== dayKey);
+    } else {
+      this._newTaskWeekdays = [...this._newTaskWeekdays, dayKey];
+    }
+    this._render();
+  }
+
+  _buildFixedInstancesForCurrentWeek(template, title, assignees) {
+    const todayIso = this._todayIsoDate();
+    const endDateIso = template.end_date;
+    const items = [];
+
+    for (const dayKey of template.weekdays) {
+      const dayDate = this._weekdayDateForCurrentWeek(dayKey);
+      if (!dayDate) continue;
+      const dayIso = this._toIsoDate(dayDate);
+      if (dayIso < todayIso) continue;
+      if (dayIso > endDateIso) continue;
+
+      items.push({
+        id: `task_${Math.random().toString(36).slice(2, 10)}`,
+        title,
+        assignees,
+        column: dayKey,
+        order: this._tasksForColumn(dayKey).length + items.filter((i) => i.column === dayKey).length,
+        created_at: new Date().toISOString(),
+        end_date: endDateIso,
+        template_id: template.id,
+        fixed: true,
+      });
+    }
+
+    return items;
+  }
+
   async _onAddTask(ev) {
     ev.preventDefault();
     const title = this._newTaskTitle.trim();
@@ -214,18 +331,51 @@ class HouseholdChoresCard extends HTMLElement {
     const checkedBoxes = [...form.querySelectorAll("input[name='assignee']:checked")];
     const assignees = checkedBoxes.map((box) => box.value);
 
-    const newTask = {
-      id: `task_${Math.random().toString(36).slice(2, 10)}`,
-      title,
-      assignees,
-      column: this._newTaskColumn,
-      order: this._tasksForColumn(this._newTaskColumn).length,
-      created_at: new Date().toISOString(),
-    };
+    if (this._newTaskFixed) {
+      if (!this._newTaskEndDate) {
+        this._error = "Fixed tasks require an end date.";
+        this._render();
+        return;
+      }
+      if (!this._newTaskWeekdays.length) {
+        this._error = "Select at least one weekday for fixed tasks.";
+        this._render();
+        return;
+      }
 
-    this._board.tasks = [...this._board.tasks, newTask];
+      const template = {
+        id: `tpl_${Math.random().toString(36).slice(2, 10)}`,
+        title,
+        assignees,
+        end_date: this._newTaskEndDate,
+        weekdays: [...this._newTaskWeekdays],
+        created_at: new Date().toISOString(),
+      };
+
+      const instances = this._buildFixedInstancesForCurrentWeek(template, title, assignees);
+      this._board.templates = [...(this._board.templates || []), template];
+      this._board.tasks = [...this._board.tasks, ...instances];
+    } else {
+      const newTask = {
+        id: `task_${Math.random().toString(36).slice(2, 10)}`,
+        title,
+        assignees,
+        column: this._newTaskColumn,
+        order: this._tasksForColumn(this._newTaskColumn).length,
+        created_at: new Date().toISOString(),
+        end_date: this._newTaskEndDate || "",
+        template_id: "",
+        fixed: false,
+      };
+      this._board.tasks = [...this._board.tasks, newTask];
+    }
+
     this._newTaskTitle = "";
     this._newTaskColumn = "backlog";
+    this._newTaskEndDate = "";
+    this._newTaskFixed = false;
+    this._newTaskWeekdays = [];
+    this._error = "";
     this._render();
     await this._saveBoard();
   }
@@ -244,11 +394,12 @@ class HouseholdChoresCard extends HTMLElement {
       .join("");
   }
 
-  _renumberColumn(columnKey) {
-    const tasks = this._tasksForColumn(columnKey);
-    tasks.forEach((task, index) => {
-      task.order = index;
-    });
+  _taskMetaLine(task) {
+    const bits = [];
+    if (task.fixed) bits.push("fixed");
+    if (task.end_date) bits.push(`until ${task.end_date}`);
+    if (!bits.length) return "";
+    return `<div class=\"task-sub\">${this._escape(bits.join(" • "))}</div>`;
   }
 
   _onDragStart(ev, taskId) {
@@ -295,6 +446,7 @@ class HouseholdChoresCard extends HTMLElement {
     if (!this._board.people.length) {
       return `<div class="empty-mini">No people yet</div>`;
     }
+
     return `
       <div class="legend-list">
         ${this._board.people
@@ -311,10 +463,24 @@ class HouseholdChoresCard extends HTMLElement {
     `;
   }
 
+  _renderWeekdaySelector() {
+    return `
+      <div class="weekday-picks">
+        ${this._weekdayKeys()
+          .map((day) => {
+            const selected = this._newTaskWeekdays.includes(day.key);
+            return `<button type=\"button\" class=\"weekday-dot ${selected ? "sel" : ""}\" data-weekday=\"${day.key}\">${day.short}</button>`;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
   _renderTaskCard(task) {
     return `
       <article class="task" draggable="true" data-task-id="${task.id}">
         <div class="task-title">${this._escape(task.title)}</div>
+        ${this._taskMetaLine(task)}
         <div class="task-meta">${this._assigneeChips(task)}</div>
       </article>
     `;
@@ -363,36 +529,11 @@ class HouseholdChoresCard extends HTMLElement {
           overflow: hidden;
         }
 
-        .wrap {
-          display: grid;
-          gap: 12px;
-          padding: 12px;
-        }
-
-        .top {
-          display: grid;
-          grid-template-columns: 1.4fr 1fr;
-          gap: 10px;
-        }
-
-        .panel {
-          background: var(--hc-card);
-          border: 1px solid var(--hc-border);
-          border-radius: 14px;
-          padding: 10px;
-        }
-
-        .panel h2 {
-          margin: 0 0 8px;
-          font-size: 0.98rem;
-          line-height: 1.2;
-        }
-
-        .row {
-          display: flex;
-          gap: 6px;
-          align-items: center;
-        }
+        .wrap { display: grid; gap: 12px; padding: 12px; }
+        .top { display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px; }
+        .panel { background: var(--hc-card); border: 1px solid var(--hc-border); border-radius: 14px; padding: 10px; }
+        .panel h2 { margin: 0 0 8px; font-size: 0.98rem; line-height: 1.2; }
+        .row { display: flex; gap: 6px; align-items: center; }
 
         input, select, button {
           font: inherit;
@@ -401,47 +542,13 @@ class HouseholdChoresCard extends HTMLElement {
           padding: 8px 10px;
         }
 
-        input, select {
-          background: #fff;
-          min-width: 0;
-          color: var(--hc-text);
-        }
+        input, select { background: #fff; min-width: 0; color: var(--hc-text); }
+        button { background: var(--hc-accent); color: #fff; border-color: transparent; cursor: pointer; white-space: nowrap; }
 
-        button {
-          background: var(--hc-accent);
-          color: #fff;
-          border-color: transparent;
-          cursor: pointer;
-          white-space: nowrap;
-        }
-
-        .small {
-          font-size: 0.8rem;
-          color: var(--hc-muted);
-          margin-top: 6px;
-        }
-
-        .legend-list {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-          gap: 6px;
-        }
-
-        .legend-item {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          background: #f8fafc;
-          border-radius: 9px;
-          padding: 4px 6px;
-        }
-
-        .legend-name {
-          font-size: 0.82rem;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
+        .small { font-size: 0.8rem; color: var(--hc-muted); margin-top: 6px; }
+        .legend-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; }
+        .legend-item { display: flex; align-items: center; gap: 6px; background: #f8fafc; border-radius: 9px; padding: 4px 6px; }
+        .legend-name { font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
         .chip {
           width: 22px;
@@ -456,36 +563,29 @@ class HouseholdChoresCard extends HTMLElement {
           box-shadow: inset 0 -1px 0 rgba(0,0,0,0.2);
         }
 
-        .task-form {
-          margin-top: 10px;
-          display: grid;
-          gap: 8px;
-        }
+        .task-form { margin-top: 10px; display: grid; gap: 8px; }
+        .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .toggle-row label { display: flex; gap: 6px; align-items: center; font-size: 0.84rem; }
 
-        .assignees {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
+        .weekday-picks { display: flex; gap: 6px; flex-wrap: wrap; }
+        .weekday-dot {
+          width: 28px;
+          height: 28px;
+          border-radius: 999px;
+          border: 1px solid #cbd5e1;
+          background: #fff;
+          color: #334155;
+          padding: 0;
+          font-size: 0.76rem;
+          font-weight: 700;
         }
+        .weekday-dot.sel { background: #0f766e; border-color: #0f766e; color: #fff; }
 
-        .assignees label {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          font-size: 0.78rem;
-        }
+        .assignees { display: flex; flex-wrap: wrap; gap: 8px; }
+        .assignees label { display: flex; align-items: center; gap: 5px; font-size: 0.78rem; }
 
-        .columns-wrap {
-          overflow-x: auto;
-          padding-bottom: 2px;
-        }
-
-        .columns {
-          display: grid;
-          grid-template-columns: repeat(9, minmax(170px, 1fr));
-          gap: 8px;
-          min-width: 980px;
-        }
+        .columns-wrap { overflow-x: auto; padding-bottom: 2px; }
+        .columns { display: grid; grid-template-columns: repeat(9, minmax(170px, 1fr)); gap: 8px; min-width: 980px; }
 
         .column {
           background: var(--hc-card);
@@ -503,74 +603,20 @@ class HouseholdChoresCard extends HTMLElement {
           background: #f0f7ff;
         }
 
-        .column header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 8px;
-        }
+        .column header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+        .column h3 { margin: 0; font-size: 0.85rem; letter-spacing: 0.01em; }
+        .column header span { font-size: 0.75rem; color: var(--hc-muted); }
 
-        .column h3 {
-          margin: 0;
-          font-size: 0.85rem;
-          letter-spacing: 0.01em;
-        }
+        .tasks { display: grid; gap: 6px; align-content: start; }
+        .task { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 7px; cursor: grab; user-select: none; }
+        .task:active { cursor: grabbing; }
+        .task-title { font-size: 0.82rem; font-weight: 600; line-height: 1.25; }
+        .task-sub { margin-top: 4px; color: #64748b; font-size: 0.73rem; }
+        .task-meta { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
 
-        .column header span {
-          font-size: 0.75rem;
-          color: var(--hc-muted);
-        }
-
-        .tasks {
-          display: grid;
-          gap: 6px;
-          align-content: start;
-        }
-
-        .task {
-          background: #f8fafc;
-          border: 1px solid #e2e8f0;
-          border-radius: 10px;
-          padding: 7px;
-          cursor: grab;
-          user-select: none;
-        }
-
-        .task:active {
-          cursor: grabbing;
-        }
-
-        .task-title {
-          font-size: 0.82rem;
-          font-weight: 600;
-          line-height: 1.25;
-        }
-
-        .task-meta {
-          margin-top: 6px;
-          display: flex;
-          flex-wrap: wrap;
-          gap: 4px;
-        }
-
-        .empty {
-          border: 1px dashed #cbd5e1;
-          border-radius: 9px;
-          padding: 10px 8px;
-          color: #94a3b8;
-          text-align: center;
-          font-size: 0.77rem;
-        }
-
-        .empty-mini {
-          color: #94a3b8;
-          font-size: 0.8rem;
-        }
-
-        .loading {
-          color: var(--hc-muted);
-          font-size: 0.85rem;
-        }
+        .empty { border: 1px dashed #cbd5e1; border-radius: 9px; padding: 10px 8px; color: #94a3b8; text-align: center; font-size: 0.77rem; }
+        .empty-mini { color: #94a3b8; font-size: 0.8rem; }
+        .loading { color: var(--hc-muted); font-size: 0.85rem; }
 
         .error {
           color: #b91c1c;
@@ -582,13 +628,8 @@ class HouseholdChoresCard extends HTMLElement {
         }
 
         @media (max-width: 900px) {
-          .top {
-            grid-template-columns: 1fr;
-          }
-
-          .columns {
-            min-width: 880px;
-          }
+          .top { grid-template-columns: 1fr; }
+          .columns { min-width: 880px; }
         }
       </style>
 
@@ -612,14 +653,14 @@ class HouseholdChoresCard extends HTMLElement {
               <h2>Add task</h2>
               <form class="task-form" id="task-form">
                 <input id="task-title" type="text" placeholder="Task title" value="${this._escape(this._newTaskTitle)}" />
-                <select id="task-column">
-                  ${this._columns()
-                    .map(
-                      (column) =>
-                        `<option value="${column.key}" ${this._newTaskColumn === column.key ? "selected" : ""}>${column.label}</option>`
-                    )
-                    .join("")}
-                </select>
+
+                <div class="toggle-row">
+                  <label><input id="task-fixed" type="checkbox" ${this._newTaskFixed ? "checked" : ""} /> Fixed until date</label>
+                  <input id="task-end-date" type="date" value="${this._escape(this._newTaskEndDate)}" />
+                </div>
+
+                ${this._newTaskFixed ? this._renderWeekdaySelector() : `<select id="task-column">${this._columns().map((column) => `<option value="${column.key}" ${this._newTaskColumn === column.key ? "selected" : ""}>${column.label}</option>`).join("")}</select>`}
+
                 <div class="assignees">
                   ${this._board.people
                     .map(
@@ -632,7 +673,9 @@ class HouseholdChoresCard extends HTMLElement {
                     )
                     .join("")}
                 </div>
+
                 <button type="submit" ${this._saving ? "disabled" : ""}>${this._saving ? "Saving..." : "Create"}</button>
+                <div class="small">No end date: task is removed Sunday 00:30 refresh (or nightly if moved to Done).</div>
               </form>
             </div>
           </div>
@@ -651,12 +694,20 @@ class HouseholdChoresCard extends HTMLElement {
     const taskForm = this.shadowRoot.querySelector("#task-form");
     const taskTitleInput = this.shadowRoot.querySelector("#task-title");
     const taskColumnInput = this.shadowRoot.querySelector("#task-column");
+    const taskEndDateInput = this.shadowRoot.querySelector("#task-end-date");
+    const taskFixedInput = this.shadowRoot.querySelector("#task-fixed");
 
     if (personForm) personForm.addEventListener("submit", (ev) => this._onAddPerson(ev));
     if (personInput) personInput.addEventListener("input", (ev) => this._onPersonNameInput(ev));
     if (taskForm) taskForm.addEventListener("submit", (ev) => this._onAddTask(ev));
     if (taskTitleInput) taskTitleInput.addEventListener("input", (ev) => this._onTaskTitleInput(ev));
     if (taskColumnInput) taskColumnInput.addEventListener("change", (ev) => this._onTaskColumnInput(ev));
+    if (taskEndDateInput) taskEndDateInput.addEventListener("change", (ev) => this._onTaskEndDateInput(ev));
+    if (taskFixedInput) taskFixedInput.addEventListener("change", (ev) => this._onTaskFixedInput(ev));
+
+    this.shadowRoot.querySelectorAll(".weekday-dot").forEach((dot) => {
+      dot.addEventListener("click", () => this._toggleWeekday(dot.dataset.weekday));
+    });
 
     this.shadowRoot.querySelectorAll(".task").forEach((taskEl) => {
       taskEl.addEventListener("dragstart", (ev) => this._onDragStart(ev, taskEl.dataset.taskId));
@@ -677,5 +728,5 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "household-chores-card",
   name: "Household Chores Card",
-  description: "Weekly chore planner with backlog, Monday-Sunday columns, done lane, and drag/drop.",
+  description: "Weekly chore planner with recurring fixed tasks, end dates, and drag/drop.",
 });

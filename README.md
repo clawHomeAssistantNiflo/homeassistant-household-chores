@@ -8,6 +8,9 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Extra columns: Backlog and Done
 - People with unique colored circular badges and first-letter initials
 - Add people and tasks directly from the card
+- Optional fixed recurring tasks with:
+  - end date
+  - weekday selection (`M T W T F S S`)
 - Drag-and-drop tasks between backlog, weekdays, and done
 - Persistent board data stored in Home Assistant (`.storage`)
 
@@ -55,3 +58,7 @@ entry_id: 0123456789abcdef0123456789abcdef
 - Default chores/members entered during integration setup are used as starter board data.
 - The card layout is optimized for tablet-sized dashboards (including iPad-width screens).
 - Tasks moved to `Done` are automatically deleted nightly at `03:00` (Home Assistant local time).
+- Every Sunday at `00:30` (local time), the board is refreshed:
+  - tasks without an `end date` are removed
+  - expired tasks are removed
+  - fixed recurring tasks are rebuilt for the upcoming Monday-Sunday week (until their end date)

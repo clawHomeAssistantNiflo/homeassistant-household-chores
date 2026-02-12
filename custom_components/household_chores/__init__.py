@@ -57,6 +57,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             second=0,
         )
         domain_data["cleanup_registered"] = True
+    if not domain_data.get("weekly_refresh_registered"):
+        async def _async_weekly_refresh(_now) -> None:
+            refreshed_total = 0
+            for board_store in domain_data["boards"].values():
+                refreshed_total += await board_store.async_weekly_refresh()
+            _LOGGER.info("Weekly refresh rebuilt %s tasks", refreshed_total)
+
+        domain_data["weekly_refresh_unsub"] = async_track_time_change(
+            hass,
+            _async_weekly_refresh,
+            hour=0,
+            minute=30,
+            second=0,
+            weekday=6,
+        )
+        domain_data["weekly_refresh_registered"] = True
 
     name = entry.options.get(CONF_NAME, entry.data.get(CONF_NAME, DEFAULT_NAME))
     members = _as_list(entry.options.get(CONF_MEMBERS, entry.data.get(CONF_MEMBERS)), DEFAULT_MEMBERS)
@@ -93,6 +109,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass.data[DOMAIN]["cleanup_unsub"]()
             hass.data[DOMAIN]["cleanup_unsub"] = None
             hass.data[DOMAIN]["cleanup_registered"] = False
+        if not hass.data[DOMAIN]["boards"] and hass.data[DOMAIN].get("weekly_refresh_unsub"):
+            hass.data[DOMAIN]["weekly_refresh_unsub"]()
+            hass.data[DOMAIN]["weekly_refresh_unsub"] = None
+            hass.data[DOMAIN]["weekly_refresh_registered"] = False
     return unload_ok
 
 

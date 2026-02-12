@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 
@@ -20,6 +21,7 @@ WEEKDAY_COLUMNS = [
     "saturday",
     "sunday",
 ]
+WEEKDAY_INDEX = {column: index for index, column in enumerate(WEEKDAY_COLUMNS)}
 
 ALL_COLUMNS = ["backlog", *WEEKDAY_COLUMNS, "done"]
 DEFAULT_COLORS = [
@@ -54,6 +56,9 @@ class Task:
     column: str
     order: int
     created_at: str
+    end_date: str | None = None
+    template_id: str | None = None
+    fixed: bool = False
 
 
 class HouseholdBoardStore:
@@ -64,7 +69,7 @@ class HouseholdBoardStore:
         self._entry_id = entry_id
         self._members = members
         self._chores = chores
-        self._store: Store[dict[str, Any]] = Store(hass, 1, f"{DOMAIN}_board_{entry_id}")
+        self._store: Store[dict[str, Any]] = Store(hass, 2, f"{DOMAIN}_board_{entry_id}")
         self._data: dict[str, Any] | None = None
 
     async def async_load(self) -> dict[str, Any]:
@@ -100,6 +105,94 @@ class HouseholdBoardStore:
         await self.async_save(board)
         return removed_count
 
+    async def async_weekly_refresh(self) -> int:
+        """Sunday 00:30 refresh.
+
+        Keeps only tasks with an end date, drops done/expired items,
+        and rebuilds fixed weekly tasks from templates for the new week.
+        """
+        board = await self.async_load()
+        today = dt_util.as_local(dt_util.utcnow()).date()
+
+        templates = board.get("templates", [])
+        active_templates: list[dict[str, Any]] = []
+        for template in templates:
+            end_date = _parse_date(template.get("end_date"))
+            if end_date is None or end_date < today:
+                continue
+            weekdays = [day for day in template.get("weekdays", []) if day in WEEKDAY_INDEX]
+            if not weekdays:
+                continue
+            active_templates.append(
+                {
+                    "id": str(template.get("id") or f"tpl_{uuid4().hex[:10]}"),
+                    "title": str(template.get("title") or "Untitled task"),
+                    "assignees": [str(item) for item in template.get("assignees", [])],
+                    "end_date": end_date.isoformat(),
+                    "weekdays": weekdays,
+                    "created_at": str(template.get("created_at") or datetime.now(UTC).isoformat()),
+                }
+            )
+
+        kept_tasks: list[dict[str, Any]] = []
+        for task in board.get("tasks", []):
+            column = str(task.get("column") or "backlog")
+            if column == "done":
+                continue
+
+            end_date = _parse_date(task.get("end_date"))
+            if end_date is None or end_date < today:
+                continue
+
+            # Fixed tasks are regenerated from template each week.
+            if task.get("template_id"):
+                continue
+
+            kept_tasks.append(task)
+
+        refreshed_tasks = kept_tasks + self._build_week_tasks_from_templates(active_templates, today)
+        board["templates"] = active_templates
+        board["tasks"] = refreshed_tasks
+        await self.async_save(board)
+        return len(refreshed_tasks)
+
+    def _build_week_tasks_from_templates(
+        self,
+        templates: list[dict[str, Any]],
+        today: date,
+    ) -> list[dict[str, Any]]:
+        current_monday = today - timedelta(days=today.weekday())
+        next_monday = current_monday + timedelta(days=7)
+
+        generated: list[dict[str, Any]] = []
+        for template in templates:
+            end_date = _parse_date(template["end_date"])
+            if end_date is None:
+                continue
+
+            for weekday in template["weekdays"]:
+                day_date = next_monday + timedelta(days=WEEKDAY_INDEX[weekday])
+                if day_date > end_date:
+                    continue
+
+                generated.append(
+                    asdict(
+                        Task(
+                            id=f"task_{uuid4().hex[:12]}",
+                            title=template["title"],
+                            assignees=template["assignees"],
+                            column=weekday,
+                            order=0,
+                            created_at=datetime.now(UTC).isoformat(),
+                            end_date=end_date.isoformat(),
+                            template_id=template["id"],
+                            fixed=True,
+                        )
+                    )
+                )
+
+        return generated
+
     def _default_board(self) -> dict[str, Any]:
         people = [
             Person(id=f"person_{index}", name=name, color=DEFAULT_COLORS[index % len(DEFAULT_COLORS)])
@@ -124,12 +217,14 @@ class HouseholdBoardStore:
         return {
             "people": [asdict(person) for person in people],
             "tasks": [asdict(task) for task in tasks],
+            "templates": [],
             "updated_at": created,
         }
 
     def _normalize_board(self, board: dict[str, Any]) -> dict[str, Any]:
         people = board.get("people", []) if isinstance(board, dict) else []
         tasks = board.get("tasks", []) if isinstance(board, dict) else []
+        templates = board.get("templates", []) if isinstance(board, dict) else []
 
         normalized_people: list[dict[str, Any]] = []
         known_person_ids: set[str] = set()
@@ -144,6 +239,32 @@ class HouseholdBoardStore:
             name = str(person.get("name") or "Person").strip() or "Person"
             color = str(person.get("color") or DEFAULT_COLORS[len(normalized_people) % len(DEFAULT_COLORS)])
             normalized_people.append({"id": person_id, "name": name, "color": color})
+
+        normalized_templates: list[dict[str, Any]] = []
+        for template in templates:
+            if not isinstance(template, dict):
+                continue
+            title = str(template.get("title") or "Untitled task").strip()
+            if not title:
+                continue
+
+            template_id = str(template.get("id") or f"tpl_{uuid4().hex[:10]}")
+            assignees = [str(item) for item in template.get("assignees", []) if str(item) in known_person_ids]
+            end_date = _parse_date(template.get("end_date"))
+            weekdays = [day for day in template.get("weekdays", []) if day in WEEKDAY_INDEX]
+            if end_date is None or not weekdays:
+                continue
+
+            normalized_templates.append(
+                {
+                    "id": template_id,
+                    "title": title,
+                    "assignees": assignees,
+                    "end_date": end_date.isoformat(),
+                    "weekdays": weekdays,
+                    "created_at": str(template.get("created_at") or datetime.now(UTC).isoformat()),
+                }
+            )
 
         normalized_tasks: list[dict[str, Any]] = []
         for index, task in enumerate(tasks):
@@ -166,6 +287,9 @@ class HouseholdBoardStore:
 
             order = int(task.get("order", index))
             created_at = str(task.get("created_at") or datetime.now(UTC).isoformat())
+            end_date = _parse_date(task.get("end_date"))
+            template_id = str(task.get("template_id")) if task.get("template_id") else None
+            fixed = bool(task.get("fixed", False))
 
             normalized_tasks.append(
                 {
@@ -175,6 +299,9 @@ class HouseholdBoardStore:
                     "column": column,
                     "order": order,
                     "created_at": created_at,
+                    "end_date": end_date.isoformat() if end_date else None,
+                    "template_id": template_id,
+                    "fixed": fixed,
                 }
             )
 
@@ -189,5 +316,19 @@ class HouseholdBoardStore:
         return {
             "people": normalized_people,
             "tasks": normalized_tasks,
+            "templates": normalized_templates,
             "updated_at": datetime.now(UTC).isoformat(),
         }
+
+
+def _parse_date(value: Any) -> date | None:
+    """Parse date input from UI/state into a date."""
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
