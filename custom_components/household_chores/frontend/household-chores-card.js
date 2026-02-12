@@ -388,6 +388,20 @@ class HouseholdChoresCard extends HTMLElement {
     await this._saveBoard();
   }
 
+  async _onDeletePerson(personId) {
+    this._board.people = this._board.people.filter((person) => person.id !== personId);
+    this._board.tasks = this._board.tasks.map((task) => ({
+      ...task,
+      assignees: task.assignees.filter((id) => id !== personId),
+    }));
+    this._board.templates = this._board.templates.map((tpl) => ({
+      ...tpl,
+      assignees: tpl.assignees.filter((id) => id !== personId),
+    }));
+    this._render();
+    await this._saveBoard();
+  }
+
   _onTaskFieldInput(field, value) {
     this._taskForm = { ...this._taskForm, [field]: value };
   }
@@ -603,9 +617,45 @@ class HouseholdChoresCard extends HTMLElement {
       .filter(Boolean)
       .map(
         (person) =>
-          `<span class="chip" draggable="true" data-person-id="${person.id}" style="background:${person.color}" title="${this._escape(person.name)}">${this._personInitial(person.name)}</span>`
+          `<span class="chip" draggable="true" data-person-id="${person.id}" data-source-task-id="${task.id}" style="background:${person.color}" title="${this._escape(person.name)}">${this._personInitial(person.name)}</span>`
       )
       .join("");
+  }
+
+  _removeAssigneeFromTask(taskId, personId) {
+    const sourceTask = this._board.tasks.find((task) => task.id === taskId);
+    if (!sourceTask) return;
+
+    if (sourceTask.template_id) {
+      const tpl = this._board.templates.find((item) => item.id === sourceTask.template_id);
+      if (tpl) tpl.assignees = tpl.assignees.filter((id) => id !== personId);
+      this._board.tasks.forEach((task) => {
+        if (task.template_id === sourceTask.template_id) {
+          task.assignees = task.assignees.filter((id) => id !== personId);
+        }
+      });
+      return;
+    }
+
+    sourceTask.assignees = sourceTask.assignees.filter((id) => id !== personId);
+  }
+
+  _assignAssigneeToTask(taskId, personId) {
+    const targetTask = this._board.tasks.find((task) => task.id === taskId);
+    if (!targetTask) return;
+
+    if (targetTask.template_id) {
+      const tpl = this._board.templates.find((item) => item.id === targetTask.template_id);
+      if (tpl && !tpl.assignees.includes(personId)) tpl.assignees.push(personId);
+      this._board.tasks.forEach((task) => {
+        if (task.template_id === targetTask.template_id && !task.assignees.includes(personId)) {
+          task.assignees.push(personId);
+        }
+      });
+      return;
+    }
+
+    if (!targetTask.assignees.includes(personId)) targetTask.assignees.push(personId);
   }
 
   _taskMetaLine(task) {
@@ -645,7 +695,11 @@ class HouseholdChoresCard extends HTMLElement {
         ${this._board.people
           .map(
             (person) =>
-              `<div class="legend-item"><span class="chip" draggable="true" data-person-id="${person.id}" style="background:${person.color}">${this._personInitial(person.name)}</span><span class="legend-name">${this._escape(person.name)}</span></div>`
+              `<div class="legend-item">
+                <span class="chip" draggable="true" data-person-id="${person.id}" style="background:${person.color}">${this._personInitial(person.name)}</span>
+                <span class="legend-name">${this._escape(person.name)}</span>
+                <button type="button" class="person-delete" data-delete-person-id="${person.id}" title="Delete person">Delete</button>
+              </div>`
           )
           .join("")}
       </div>
@@ -733,6 +787,8 @@ class HouseholdChoresCard extends HTMLElement {
         .actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
         .action-btn{font:inherit;border-radius:10px;border:1px solid transparent;padding:10px;background:var(--hc-accent);color:#fff;font-weight:700;cursor:pointer}
         .legend-inline{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
+        .person-pill{display:flex;align-items:center;gap:6px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:3px 8px 3px 4px;font-size:.78rem;color:#334155}
+        .person-delete{margin-left:auto;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:8px;padding:4px 8px;font-size:.72rem;cursor:pointer}
         .chip{width:22px;height:22px;border-radius:999px;color:#fff;font-weight:700;font-size:.75rem;display:inline-flex;align-items:center;justify-content:center;box-shadow:inset 0 -1px 0 rgba(0,0,0,.2)}
         .small{font-size:.8rem;color:var(--hc-muted);margin-top:6px}
         .columns-wrap{display:grid;gap:10px}
@@ -810,7 +866,7 @@ class HouseholdChoresCard extends HTMLElement {
               <button class="action-btn" type="button" id="open-task">Add task</button>
             </div>
             <div class="legend-inline">
-              ${this._board.people.slice(0, 12).map((person) => `<span class="chip" draggable="true" data-person-id="${person.id}" style="background:${person.color}" title="${this._escape(person.name)}">${this._personInitial(person.name)}</span>`).join("")}
+              ${this._board.people.slice(0, 12).map((person) => `<span class="person-pill"><span class="chip" draggable="true" data-person-id="${person.id}" style="background:${person.color}" title="${this._escape(person.name)}">${this._personInitial(person.name)}</span><span>${this._escape(person.name)}</span></span>`).join("")}
             </div>
           </div>
 
@@ -839,6 +895,7 @@ class HouseholdChoresCard extends HTMLElement {
     const taskEndDateInput = this.shadowRoot.querySelector("#task-end-date");
     const taskFixedInput = this.shadowRoot.querySelector("#task-fixed");
     const deleteTaskBtn = this.shadowRoot.querySelector("#delete-task");
+    const deletePersonButtons = this.shadowRoot.querySelectorAll("[data-delete-person-id]");
 
     if (openPeopleBtn) openPeopleBtn.addEventListener("click", () => this._openPeopleModal());
     if (openTaskBtn) openTaskBtn.addEventListener("click", () => this._openAddTaskModal());
@@ -862,6 +919,9 @@ class HouseholdChoresCard extends HTMLElement {
       });
     }
     if (deleteTaskBtn) deleteTaskBtn.addEventListener("click", () => this._onDeleteTask());
+    deletePersonButtons.forEach((btn) => {
+      btn.addEventListener("click", () => this._onDeletePerson(btn.dataset.deletePersonId));
+    });
 
     this.shadowRoot.querySelectorAll(".weekday-dot").forEach((dot) => {
       dot.addEventListener("click", () => this._toggleTaskWeekday(dot.dataset.weekday));
@@ -873,8 +933,13 @@ class HouseholdChoresCard extends HTMLElement {
 
     this.shadowRoot.querySelectorAll("[data-person-id]").forEach((el) => {
       el.addEventListener("dragstart", (ev) => {
-        ev.dataTransfer.effectAllowed = "copy";
+        const sourceTaskId = el.dataset.sourceTaskId || "";
+        ev.dataTransfer.effectAllowed = sourceTaskId ? "move" : "copy";
         ev.dataTransfer.setData("text/person", el.dataset.personId);
+        if (sourceTaskId) {
+          ev.dataTransfer.setData("text/person-assignment", el.dataset.personId);
+          ev.dataTransfer.setData("text/source-task", sourceTaskId);
+        }
       });
     });
 
@@ -901,20 +966,14 @@ class HouseholdChoresCard extends HTMLElement {
       });
 
       taskEl.addEventListener("drop", async (ev) => {
-        const personId = ev.dataTransfer.getData("text/person");
+        const personId = ev.dataTransfer.getData("text/person-assignment") || ev.dataTransfer.getData("text/person");
+        const sourceTaskId = ev.dataTransfer.getData("text/source-task");
         if (!personId) return;
         ev.preventDefault();
-        const task = this._board.tasks.find((t) => t.id === taskId);
-        if (!task) return;
-        if (!task.assignees.includes(personId)) task.assignees.push(personId);
-
-        if (task.template_id) {
-          const tpl = this._board.templates.find((x) => x.id === task.template_id);
-          if (tpl && !tpl.assignees.includes(personId)) tpl.assignees.push(personId);
-          this._board.tasks.forEach((t) => {
-            if (t.template_id === task.template_id && !t.assignees.includes(personId)) t.assignees.push(personId);
-          });
+        if (sourceTaskId && sourceTaskId !== taskId) {
+          this._removeAssigneeFromTask(sourceTaskId, personId);
         }
+        this._assignAssigneeToTask(taskId, personId);
 
         this._render();
         await this._saveBoard();
@@ -935,6 +994,15 @@ class HouseholdChoresCard extends HTMLElement {
       columnEl.addEventListener("drop", async (ev) => {
         columnEl.classList.remove("drag-over");
         const taskId = ev.dataTransfer.getData("text/task");
+        const personId = ev.dataTransfer.getData("text/person-assignment");
+        const sourceTaskId = ev.dataTransfer.getData("text/source-task");
+        if (personId && sourceTaskId) {
+          ev.preventDefault();
+          this._removeAssigneeFromTask(sourceTaskId, personId);
+          this._render();
+          await this._saveBoard();
+          return;
+        }
         if (!taskId) return;
         ev.preventDefault();
 

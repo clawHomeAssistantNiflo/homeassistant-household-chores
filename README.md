@@ -15,6 +15,9 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Click any task to edit title/assignees/day/end date in modal
 - Delete task directly from the edit modal
 - Drag people badges directly onto tasks to assign quickly
+- Full person names are shown in the top People row
+- People modal supports deleting a person (also removes them from task/template assignees)
+- Dragging a person chip from a task to empty lane area removes that person from that task
 - Optional fixed recurring tasks with:
   - end date
   - weekday selection (`M T W T F S S`)
