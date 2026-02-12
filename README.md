@@ -73,6 +73,7 @@ The screenshots below are updated with each UI/layout release.
 ## Notes
 
 - The custom card JavaScript is auto-registered by the integration at startup.
+- JS resource is auto versioned (`?v=<manifest version>`) to reduce browser cache issues after updates.
 - If you update from older versions, restart Home Assistant to reload websocket commands/resources.
 - Default chores/members entered during integration setup are used as starter board data.
 - The card layout is optimized for tablet-sized dashboards (including iPad-width screens).
