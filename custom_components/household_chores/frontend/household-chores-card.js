@@ -25,6 +25,8 @@ class HouseholdChoresCard extends HTMLElement {
     this._newTaskEndDate = "";
     this._newTaskFixed = false;
     this._newTaskWeekdays = [];
+    this._showPeopleModal = false;
+    this._showTaskModal = false;
     this._dragTaskId = "";
     this._dragOverColumn = "";
   }
@@ -239,6 +241,26 @@ class HouseholdChoresCard extends HTMLElement {
     this._newPersonName = ev.target.value;
   }
 
+  _openPeopleModal() {
+    this._showPeopleModal = true;
+    this._render();
+  }
+
+  _closePeopleModal() {
+    this._showPeopleModal = false;
+    this._render();
+  }
+
+  _openTaskModal() {
+    this._showTaskModal = true;
+    this._render();
+  }
+
+  _closeTaskModal() {
+    this._showTaskModal = false;
+    this._render();
+  }
+
   async _onAddPerson(ev) {
     ev.preventDefault();
     const name = this._newPersonName.trim();
@@ -260,6 +282,7 @@ class HouseholdChoresCard extends HTMLElement {
     ];
 
     this._newPersonName = "";
+    this._showPeopleModal = false;
     this._render();
     await this._saveBoard();
   }
@@ -375,6 +398,7 @@ class HouseholdChoresCard extends HTMLElement {
     this._newTaskEndDate = "";
     this._newTaskFixed = false;
     this._newTaskWeekdays = [];
+    this._showTaskModal = false;
     this._error = "";
     this._render();
     await this._saveBoard();
@@ -530,7 +554,7 @@ class HouseholdChoresCard extends HTMLElement {
         }
 
         .wrap { display: grid; gap: 12px; padding: 12px; }
-        .top { display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px; }
+        .top { display: grid; grid-template-columns: 1fr; gap: 10px; }
         .panel { background: var(--hc-card); border: 1px solid var(--hc-border); border-radius: 14px; padding: 10px; }
         .panel h2 { margin: 0 0 8px; font-size: 0.98rem; line-height: 1.2; }
         .row { display: flex; gap: 6px; align-items: center; }
@@ -546,6 +570,20 @@ class HouseholdChoresCard extends HTMLElement {
         button { background: var(--hc-accent); color: #fff; border-color: transparent; cursor: pointer; white-space: nowrap; }
 
         .small { font-size: 0.8rem; color: var(--hc-muted); margin-top: 6px; }
+        .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .action-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 700;
+          min-height: 40px;
+        }
+        .legend-inline {
+          margin-top: 8px;
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
         .legend-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; }
         .legend-item { display: flex; align-items: center; gap: 6px; background: #f8fafc; border-radius: 9px; padding: 4px 6px; }
         .legend-name { font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -627,6 +665,44 @@ class HouseholdChoresCard extends HTMLElement {
           border-radius: 8px;
         }
 
+        .modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(15, 23, 42, 0.45);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 999;
+          padding: 14px;
+        }
+        .modal {
+          width: min(540px, 100%);
+          max-height: 88vh;
+          overflow: auto;
+          background: #ffffff;
+          border-radius: 14px;
+          border: 1px solid var(--hc-border);
+          padding: 12px;
+          box-shadow: 0 18px 50px rgba(2, 6, 23, 0.28);
+        }
+        .modal-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 10px;
+        }
+        .modal-head h3 {
+          margin: 0;
+          font-size: 1rem;
+        }
+        .close-btn {
+          background: #e2e8f0;
+          color: #0f172a;
+          border: 1px solid #cbd5e1;
+          min-width: 36px;
+          padding: 6px 10px;
+        }
+
         @media (max-width: 900px) {
           .top { grid-template-columns: 1fr; }
           .columns { min-width: 880px; }
@@ -640,43 +716,20 @@ class HouseholdChoresCard extends HTMLElement {
 
           <div class="top">
             <div class="panel">
-              <h2>People</h2>
-              <form class="row" id="person-form">
-                <input id="person-name" type="text" placeholder="Add person" value="${this._escape(this._newPersonName)}" />
-                <button type="submit">Add</button>
-              </form>
-              <div class="small">Each person gets a unique color badge.</div>
-              <div style="margin-top:8px;">${this._renderPeopleLegend()}</div>
-            </div>
-
-            <div class="panel">
-              <h2>Add task</h2>
-              <form class="task-form" id="task-form">
-                <input id="task-title" type="text" placeholder="Task title" value="${this._escape(this._newTaskTitle)}" />
-
-                <div class="toggle-row">
-                  <label><input id="task-fixed" type="checkbox" ${this._newTaskFixed ? "checked" : ""} /> Fixed until date</label>
-                  <input id="task-end-date" type="date" value="${this._escape(this._newTaskEndDate)}" />
-                </div>
-
-                ${this._newTaskFixed ? this._renderWeekdaySelector() : `<select id="task-column">${this._columns().map((column) => `<option value="${column.key}" ${this._newTaskColumn === column.key ? "selected" : ""}>${column.label}</option>`).join("")}</select>`}
-
-                <div class="assignees">
-                  ${this._board.people
-                    .map(
-                      (person) => `
-                        <label>
-                          <input type="checkbox" name="assignee" value="${person.id}" />
-                          <span class="chip" style="background:${person.color}">${this._personInitial(person.name)}</span>
-                        </label>
-                      `
-                    )
-                    .join("")}
-                </div>
-
-                <button type="submit" ${this._saving ? "disabled" : ""}>${this._saving ? "Saving..." : "Create"}</button>
-                <div class="small">No end date: task is removed Sunday 00:30 refresh (or nightly if moved to Done).</div>
-              </form>
+              <div class="actions">
+                <button class="action-btn" type="button" id="open-people">People</button>
+                <button class="action-btn" type="button" id="open-task">Add task</button>
+              </div>
+              <div class="legend-inline">
+                ${this._board.people
+                  .slice(0, 8)
+                  .map(
+                    (person) =>
+                      `<span class="chip" style="background:${person.color}" title="${this._escape(person.name)}">${this._personInitial(person.name)}</span>`
+                  )
+                  .join("")}
+              </div>
+              <div class="small">Compact mode: tap buttons to open forms.</div>
             </div>
           </div>
 
@@ -687,8 +740,68 @@ class HouseholdChoresCard extends HTMLElement {
           </div>
         </div>
       </ha-card>
+
+      ${this._showPeopleModal ? `
+        <div class="modal-backdrop" id="people-backdrop">
+          <div class="modal">
+            <div class="modal-head">
+              <h3>People</h3>
+              <button type="button" class="close-btn" id="close-people">X</button>
+            </div>
+            <form class="row" id="person-form">
+              <input id="person-name" type="text" placeholder="Add person" value="${this._escape(this._newPersonName)}" />
+              <button type="submit">Add</button>
+            </form>
+            <div class="small">Each person gets a unique color badge.</div>
+            <div style="margin-top:8px;">${this._renderPeopleLegend()}</div>
+          </div>
+        </div>
+      ` : ""}
+
+      ${this._showTaskModal ? `
+        <div class="modal-backdrop" id="task-backdrop">
+          <div class="modal">
+            <div class="modal-head">
+              <h3>Add task</h3>
+              <button type="button" class="close-btn" id="close-task">X</button>
+            </div>
+            <form class="task-form" id="task-form">
+              <input id="task-title" type="text" placeholder="Task title" value="${this._escape(this._newTaskTitle)}" />
+
+              <div class="toggle-row">
+                <label><input id="task-fixed" type="checkbox" ${this._newTaskFixed ? "checked" : ""} /> Fixed until date</label>
+                <input id="task-end-date" type="date" value="${this._escape(this._newTaskEndDate)}" />
+              </div>
+
+              ${this._newTaskFixed ? this._renderWeekdaySelector() : `<select id="task-column">${this._columns().map((column) => `<option value="${column.key}" ${this._newTaskColumn === column.key ? "selected" : ""}>${column.label}</option>`).join("")}</select>`}
+
+              <div class="assignees">
+                ${this._board.people
+                  .map(
+                    (person) => `
+                      <label>
+                        <input type="checkbox" name="assignee" value="${person.id}" />
+                        <span class="chip" style="background:${person.color}">${this._personInitial(person.name)}</span>
+                      </label>
+                    `
+                  )
+                  .join("")}
+              </div>
+
+              <button type="submit" ${this._saving ? "disabled" : ""}>${this._saving ? "Saving..." : "Create"}</button>
+              <div class="small">No end date: task is removed on weekly refresh (or nightly if moved to Done).</div>
+            </form>
+          </div>
+        </div>
+      ` : ""}
     `;
 
+    const openPeopleBtn = this.shadowRoot.querySelector("#open-people");
+    const openTaskBtn = this.shadowRoot.querySelector("#open-task");
+    const closePeopleBtn = this.shadowRoot.querySelector("#close-people");
+    const closeTaskBtn = this.shadowRoot.querySelector("#close-task");
+    const peopleBackdrop = this.shadowRoot.querySelector("#people-backdrop");
+    const taskBackdrop = this.shadowRoot.querySelector("#task-backdrop");
     const personForm = this.shadowRoot.querySelector("#person-form");
     const personInput = this.shadowRoot.querySelector("#person-name");
     const taskForm = this.shadowRoot.querySelector("#task-form");
@@ -697,6 +810,20 @@ class HouseholdChoresCard extends HTMLElement {
     const taskEndDateInput = this.shadowRoot.querySelector("#task-end-date");
     const taskFixedInput = this.shadowRoot.querySelector("#task-fixed");
 
+    if (openPeopleBtn) openPeopleBtn.addEventListener("click", () => this._openPeopleModal());
+    if (openTaskBtn) openTaskBtn.addEventListener("click", () => this._openTaskModal());
+    if (closePeopleBtn) closePeopleBtn.addEventListener("click", () => this._closePeopleModal());
+    if (closeTaskBtn) closeTaskBtn.addEventListener("click", () => this._closeTaskModal());
+    if (peopleBackdrop) {
+      peopleBackdrop.addEventListener("click", (ev) => {
+        if (ev.target === peopleBackdrop) this._closePeopleModal();
+      });
+    }
+    if (taskBackdrop) {
+      taskBackdrop.addEventListener("click", (ev) => {
+        if (ev.target === taskBackdrop) this._closeTaskModal();
+      });
+    }
     if (personForm) personForm.addEventListener("submit", (ev) => this._onAddPerson(ev));
     if (personInput) personInput.addEventListener("input", (ev) => this._onPersonNameInput(ev));
     if (taskForm) taskForm.addEventListener("submit", (ev) => this._onAddTask(ev));
