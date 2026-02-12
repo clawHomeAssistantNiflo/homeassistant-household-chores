@@ -4,10 +4,10 @@ Household Chores is a HACS-installable custom integration for a weekly household
 
 ## What you get
 
-- Weekly board columns: Monday to Sunday
-- Extra columns: Backlog and Done
+- Main week row: Monday to Sunday
+- Secondary row: Backlog + Done in a 2-column grid below the week
 - People with unique colored circular badges and first-letter initials
-- Add people and tasks directly from the card
+- Compact mobile-first actions: `People` and `Add task` buttons open modal forms
 - Optional fixed recurring tasks with:
   - end date
   - weekday selection (`M T W T F S S`)
@@ -40,6 +40,18 @@ type: custom:household-chores-card
 title: Family Week
 entry_id: 0123456789abcdef0123456789abcdef
 ```
+
+## Configure Weekly Refresh
+
+In Home Assistant:
+
+1. `Settings -> Devices & Services`
+2. Open `Household Chores`
+3. `Configure`
+4. Set:
+   - `Weekly refresh day`
+   - `Weekly refresh hour`
+   - `Weekly refresh minute`
 
 ## Screenshots
 
