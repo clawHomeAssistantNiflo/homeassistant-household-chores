@@ -54,3 +54,4 @@ entry_id: 0123456789abcdef0123456789abcdef
 - The custom card JavaScript is auto-registered by the integration at startup.
 - Default chores/members entered during integration setup are used as starter board data.
 - The card layout is optimized for tablet-sized dashboards (including iPad-width screens).
+- Tasks moved to `Done` are automatically deleted nightly at `03:00` (Home Assistant local time).

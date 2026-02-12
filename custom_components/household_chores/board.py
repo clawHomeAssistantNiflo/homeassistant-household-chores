@@ -87,6 +87,19 @@ class HouseholdBoardStore:
         await self._store.async_save(self._data)
         return self._data
 
+    async def async_remove_done_tasks(self) -> int:
+        """Remove all tasks in the done column and persist if changed."""
+        board = await self.async_load()
+        tasks = board.get("tasks", [])
+        remaining_tasks = [task for task in tasks if task.get("column") != "done"]
+        removed_count = len(tasks) - len(remaining_tasks)
+        if removed_count == 0:
+            return 0
+
+        board["tasks"] = remaining_tasks
+        await self.async_save(board)
+        return removed_count
+
     def _default_board(self) -> dict[str, Any]:
         people = [
             Person(id=f"person_{index}", name=name, color=DEFAULT_COLORS[index % len(DEFAULT_COLORS)])

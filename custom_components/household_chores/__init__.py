@@ -8,6 +8,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_track_time_change
 
 from .board import HouseholdBoardStore
 from .const import CONF_CHORES, CONF_MEMBERS, DEFAULT_CHORES, DEFAULT_MEMBERS, DEFAULT_NAME, DOMAIN, PLATFORMS
@@ -40,6 +41,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not domain_data.get("card_registered"):
         await async_register_card(hass)
         domain_data["card_registered"] = True
+    if not domain_data.get("cleanup_registered"):
+        async def _async_cleanup_done_tasks(_now) -> None:
+            removed_total = 0
+            for board_store in domain_data["boards"].values():
+                removed_total += await board_store.async_remove_done_tasks()
+            if removed_total:
+                _LOGGER.info("Nightly cleanup removed %s done tasks", removed_total)
+
+        domain_data["cleanup_unsub"] = async_track_time_change(
+            hass,
+            _async_cleanup_done_tasks,
+            hour=3,
+            minute=0,
+            second=0,
+        )
+        domain_data["cleanup_registered"] = True
 
     name = entry.options.get(CONF_NAME, entry.data.get(CONF_NAME, DEFAULT_NAME))
     members = _as_list(entry.options.get(CONF_MEMBERS, entry.data.get(CONF_MEMBERS)), DEFAULT_MEMBERS)
@@ -72,6 +89,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         hass.data[DOMAIN]["boards"].pop(entry.entry_id, None)
         hass.data[DOMAIN].pop(entry.entry_id, None)
+        if not hass.data[DOMAIN]["boards"] and hass.data[DOMAIN].get("cleanup_unsub"):
+            hass.data[DOMAIN]["cleanup_unsub"]()
+            hass.data[DOMAIN]["cleanup_unsub"] = None
+            hass.data[DOMAIN]["cleanup_registered"] = False
     return unload_ok
 
 
