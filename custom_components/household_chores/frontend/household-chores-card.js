@@ -728,7 +728,7 @@ class HouseholdChoresCard extends HTMLElement {
       <style>
         :host{--hc-bg:linear-gradient(145deg,#f8fafc 0%,#eef2ff 100%);--hc-text:#0f172a;--hc-muted:#64748b;--hc-border:#dbe3ef;--hc-card:#fff;--hc-accent:#0f766e;display:block}
         ha-card{background:var(--hc-bg);color:var(--hc-text);border-radius:18px;border:1px solid var(--hc-border);overflow:hidden}
-        .wrap{display:grid;gap:12px;padding:12px}
+        .wrap{display:grid;gap:8px;padding:8px 12px 12px}
         .panel{background:var(--hc-card);border:1px solid var(--hc-border);border-radius:14px;padding:10px}
         .actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
         .action-btn{font:inherit;border-radius:10px;border:1px solid transparent;padding:10px;background:var(--hc-accent);color:#fff;font-weight:700;cursor:pointer}
@@ -742,7 +742,7 @@ class HouseholdChoresCard extends HTMLElement {
         .column{background:var(--hc-card);border:1px solid var(--hc-border);border-radius:12px;padding:8px;display:grid;grid-template-rows:auto 1fr;min-height:220px}
         .week-columns .column.week-lane{min-height:360px;max-height:360px}
         .week-columns .column.week-lane .tasks{max-height:300px;overflow-y:auto;overflow-x:hidden;padding-right:2px}
-        .side-columns .column.side-lane{min-height:170px}
+        .side-columns .column.side-lane{min-height:132px;max-height:132px}
         .side-columns .column.side-lane .tasks{display:flex;flex-direction:row;align-items:flex-start;overflow-x:auto;overflow-y:hidden;gap:6px;padding-bottom:3px}
         .side-columns .column.side-lane .task{min-width:180px;flex:0 0 180px}
         .column.drag-over{border-color:#2563eb;box-shadow:inset 0 0 0 1px #2563eb;background:#f0f7ff}
@@ -783,6 +783,7 @@ class HouseholdChoresCard extends HTMLElement {
           .side-columns{grid-template-columns:1fr}
           .column h3{font-size:.76rem}
           .task-title{font-size:.73rem}
+          .side-columns .column.side-lane{min-height:150px;max-height:150px}
           .side-columns .column.side-lane .tasks{
             display:grid;
             grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
