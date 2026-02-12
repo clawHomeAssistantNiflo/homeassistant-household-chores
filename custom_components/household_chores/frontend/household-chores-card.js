@@ -374,7 +374,6 @@ class HouseholdChoresCard extends HTMLElement {
   }
 
   _toggleTaskWeekday(dayKey) {
-    if (!this._taskForm.fixed) return;
     const set = new Set(this._taskForm.weekdays);
     if (set.has(dayKey)) set.delete(dayKey);
     else set.add(dayKey);
@@ -409,8 +408,9 @@ class HouseholdChoresCard extends HTMLElement {
   async _createTaskFromForm() {
     const form = this._taskForm;
     if (!form.title.trim()) return;
+    const effectiveFixed = form.fixed || form.weekdays.length > 0;
 
-    if (form.fixed) {
+    if (effectiveFixed) {
       if (!form.endDate) {
         this._error = "Fixed tasks require an end date.";
         this._render();
@@ -443,10 +443,10 @@ class HouseholdChoresCard extends HTMLElement {
           column: form.column,
           order: this._tasksForColumn(form.column).length,
           created_at: new Date().toISOString(),
-          end_date: form.endDate || "",
-          template_id: "",
-          fixed: false,
-        },
+        end_date: form.endDate || "",
+        template_id: "",
+        fixed: false,
+      },
       ];
     }
 
@@ -459,8 +459,9 @@ class HouseholdChoresCard extends HTMLElement {
     const form = this._taskForm;
     const original = this._board.tasks.find((t) => t.id === form.taskId);
     if (!original) return;
+    const effectiveFixed = form.fixed || form.weekdays.length > 0;
 
-    if (form.fixed) {
+    if (effectiveFixed) {
       if (!form.endDate || !form.weekdays.length) {
         this._error = "Fixed task requires end date and weekdays.";
         this._render();
@@ -611,6 +612,7 @@ class HouseholdChoresCard extends HTMLElement {
   _renderTaskModal() {
     if (!this._showTaskModal) return "";
     const form = this._taskForm;
+    const showWeekdayMode = form.fixed || form.weekdays.length > 0;
     return `
       <div class="modal-backdrop" id="task-backdrop">
         <div class="modal">
@@ -624,7 +626,8 @@ class HouseholdChoresCard extends HTMLElement {
               <label><input id="task-fixed" type="checkbox" ${form.fixed ? "checked" : ""} /> Fixed until date</label>
               <input id="task-end-date" type="date" value="${this._escape(form.endDate)}" />
             </div>
-            ${form.fixed ? this._renderWeekdaySelector(form.weekdays) : `<select id="task-column">${this._columns().map((c) => `<option value="${c.key}" ${form.column === c.key ? "selected" : ""}>${c.label}</option>`).join("")}</select>`}
+            ${this._renderWeekdaySelector(form.weekdays)}
+            ${showWeekdayMode ? "" : `<select id="task-column">${this._columns().map((c) => `<option value="${c.key}" ${form.column === c.key ? "selected" : ""}>${c.label}</option>`).join("")}</select>`}
             <div class="assignees">
               ${this._board.people
                 .map(
@@ -783,7 +786,6 @@ class HouseholdChoresCard extends HTMLElement {
       taskFixedInput.addEventListener("change", (ev) => {
         const checked = Boolean(ev.target.checked);
         this._onTaskFieldInput("fixed", checked);
-        if (!checked) this._onTaskFieldInput("weekdays", []);
         this._render();
       });
     }

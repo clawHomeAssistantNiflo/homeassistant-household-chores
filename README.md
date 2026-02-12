@@ -15,6 +15,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Optional fixed recurring tasks with:
   - end date
   - weekday selection (`M T W T F S S`)
+- Weekday selection is always available in task modal; selecting weekdays hides single-column (`Backlog/day`) selector
 - Drag-and-drop tasks between backlog, weekdays, and done
 - Persistent board data stored in Home Assistant (`.storage`)
 
