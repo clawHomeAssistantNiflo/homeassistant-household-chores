@@ -174,7 +174,14 @@ class HouseholdChoresCard extends HTMLElement {
       const entries = result?.entries || [];
       if (entries.length === 1) this._config.entry_id = entries[0].entry_id;
     } catch (_err) {
-      // handled at call site
+      // fallback below
+    }
+
+    if (!this._config.entry_id) {
+      const stateEntity = this._findBoardStateEntity();
+      if (stateEntity?.attributes?.entry_id) {
+        this._config.entry_id = stateEntity.attributes.entry_id;
+      }
     }
   }
 
@@ -229,20 +236,32 @@ class HouseholdChoresCard extends HTMLElement {
     }
   }
 
-  _loadBoardFromStateEntity() {
+  _findBoardStateEntity() {
     if (!this._hass || !this._hass.states) return null;
-    const states = this._hass.states;
-    const entries = Object.entries(states);
-    for (const [entityId, state] of entries) {
-      if (!entityId.startsWith("sensor.")) continue;
-      if (!entityId.endsWith("_board_state")) continue;
-      const attrs = state?.attributes || {};
-      if (attrs.entry_id !== this._config.entry_id) continue;
-      const board = attrs.board;
-      if (!board || typeof board !== "object") continue;
-      return board;
+    const entries = Object.entries(this._hass.states).filter(([entityId]) => entityId.startsWith("sensor.") && entityId.endsWith("_board_state"));
+    if (!entries.length) return null;
+
+    if (this._config?.entry_id) {
+      for (const [, state] of entries) {
+        const attrs = state?.attributes || {};
+        if (attrs.entry_id === this._config.entry_id) return state;
+      }
     }
+
+    if (entries.length === 1) return entries[0][1];
     return null;
+  }
+
+  _loadBoardFromStateEntity() {
+    const state = this._findBoardStateEntity();
+    if (!state) return null;
+    const attrs = state.attributes || {};
+    if (!this._config.entry_id && attrs.entry_id) {
+      this._config.entry_id = attrs.entry_id;
+    }
+    const board = attrs.board;
+    if (!board || typeof board !== "object") return null;
+    return board;
   }
 
   async _saveBoard() {
