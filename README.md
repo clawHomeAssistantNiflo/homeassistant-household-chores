@@ -10,10 +10,9 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - On compact/mobile screens, Backlog/Done tasks switch to a responsive card grid (no forced overflow cards)
 - Header spacing is tightened so title sits closer to action buttons
 - Backlog/Done lanes are intentionally shorter (about 2 task rows viewport)
-- Empty lanes now include an `Add task` action near `Drop here`:
-  - weekdays: button shown under `Drop here`
-  - backlog/done: button shown beside `Drop here`
-- Weekday lanes always show a bottom `Add task` action even when tasks already exist
+- Each lane card acts as a hidden quick-add area:
+  - tap/click whitespace in `Mon..Sun`, `Backlog`, or `Done` to open Add task prefilled for that lane
+  - tap/click on a task still opens edit/delete for that task
 - People with unique colored circular badges and first-letter initials
 - Compact mobile-first actions: `People` and `Add task` buttons open modal forms
 - Click any task to edit title/assignees/day/end date in modal

@@ -691,11 +691,9 @@ class HouseholdChoresCard extends HTMLElement {
   _renderColumn(column) {
     const tasks = this._tasksForColumn(column.key);
     const isSideLane = column.key === "backlog" || column.key === "done";
-    const isWeekdayLane = this._weekdayKeys().some((item) => item.key === column.key);
     const emptyContent = `
       <div class="empty-wrap ${isSideLane ? "side-empty" : "week-empty"}">
         <div class="empty">Drop here</div>
-        <button type="button" class="empty-add" data-add-column="${column.key}">Add task</button>
       </div>
     `;
     return `
@@ -704,7 +702,6 @@ class HouseholdChoresCard extends HTMLElement {
         <div class="tasks">
           ${tasks.length ? tasks.map((task) => this._renderTaskCard(task)).join("") : emptyContent}
         </div>
-        ${isWeekdayLane ? `<div class="lane-footer"><button type="button" class="lane-add" data-add-column="${column.key}">Add task</button></div>` : ""}
       </section>
     `;
   }
@@ -818,8 +815,6 @@ class HouseholdChoresCard extends HTMLElement {
         .week-columns{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;min-width:0}
         .side-columns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
         .column{background:var(--hc-card);border:1px solid var(--hc-border);border-radius:12px;padding:8px;display:grid;grid-template-rows:auto 1fr;min-height:220px}
-        .lane-footer{margin-top:6px}
-        .lane-add{width:100%;background:#0f766e;color:#fff;border:1px solid transparent;border-radius:9px;padding:7px 10px;font-size:.78rem;cursor:pointer}
         .week-columns .column.week-lane{min-height:360px;max-height:360px}
         .week-columns .column.week-lane .tasks{max-height:300px;overflow-y:auto;overflow-x:hidden;padding-right:2px}
         .side-columns .column.side-lane{min-height:132px;max-height:132px}
@@ -836,9 +831,8 @@ class HouseholdChoresCard extends HTMLElement {
         .task-meta{margin-top:6px;display:flex;gap:4px;flex-wrap:wrap}
         .empty-wrap{display:grid;gap:6px;align-content:start}
         .week-empty{grid-template-columns:1fr}
-        .side-empty{grid-template-columns:1fr auto;align-items:start}
+        .side-empty{grid-template-columns:1fr}
         .empty{border:1px dashed #cbd5e1;border-radius:9px;padding:10px 8px;color:#94a3b8;text-align:center;font-size:.77rem}
-        .empty-add{background:#0f766e;color:#fff;border:1px solid transparent;border-radius:9px;padding:8px 10px;font-size:.78rem;cursor:pointer}
         .empty-mini{color:#94a3b8;font-size:.8rem}
         .loading{color:var(--hc-muted);font-size:.85rem}
         .error{color:#b91c1c;font-size:.85rem;background:#fee2e2;border:1px solid #fecaca;padding:8px;border-radius:8px}
@@ -925,7 +919,6 @@ class HouseholdChoresCard extends HTMLElement {
     const taskFixedInput = this.shadowRoot.querySelector("#task-fixed");
     const deleteTaskBtn = this.shadowRoot.querySelector("#delete-task");
     const deletePersonButtons = this.shadowRoot.querySelectorAll("[data-delete-person-id]");
-    const emptyAddButtons = this.shadowRoot.querySelectorAll("[data-add-column]");
 
     if (openPeopleBtn) openPeopleBtn.addEventListener("click", () => this._openPeopleModal());
     if (openTaskBtn) openTaskBtn.addEventListener("click", () => this._openAddTaskModal());
@@ -952,10 +945,6 @@ class HouseholdChoresCard extends HTMLElement {
     deletePersonButtons.forEach((btn) => {
       btn.addEventListener("click", () => this._onDeletePerson(btn.dataset.deletePersonId));
     });
-    emptyAddButtons.forEach((btn) => {
-      btn.addEventListener("click", () => this._openAddTaskModalForColumn(btn.dataset.addColumn));
-    });
-
     this.shadowRoot.querySelectorAll(".weekday-dot").forEach((dot) => {
       dot.addEventListener("click", () => this._toggleTaskWeekday(dot.dataset.weekday));
     });
@@ -1015,6 +1004,13 @@ class HouseholdChoresCard extends HTMLElement {
 
     this.shadowRoot.querySelectorAll(".column").forEach((columnEl) => {
       const columnKey = columnEl.dataset.column;
+      columnEl.addEventListener("click", (ev) => {
+        if (this._draggingTask) return;
+        if (ev.target.closest(".task")) return;
+        if (ev.target.closest("header")) return;
+        if (ev.target.closest("button, input, select, label, a")) return;
+        this._openAddTaskModalForColumn(columnKey);
+      });
       columnEl.addEventListener("dragover", (ev) => {
         if (ev.dataTransfer.types.includes("text/task")) {
           ev.preventDefault();
