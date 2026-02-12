@@ -1,4 +1,9 @@
 class HouseholdChoresCard extends HTMLElement {
+  static getConfigElement() {
+    // Keep HA card editor happy and avoid configuration errors in some builds.
+    return document.createElement("ha-form");
+  }
+
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
@@ -24,6 +29,9 @@ class HouseholdChoresCard extends HTMLElement {
   }
 
   setConfig(config) {
+    if (!config || typeof config !== "object") {
+      throw new Error("Invalid card configuration");
+    }
     this._config = { title: config.title || "Household Chores", entry_id: config.entry_id || "" };
     this._render();
   }

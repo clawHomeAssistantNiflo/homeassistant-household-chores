@@ -77,6 +77,7 @@ The screenshots below are updated with each UI/layout release.
 - Save operations now include a fallback service (`household_chores.save_board`) if websocket save command is unavailable in runtime.
 - Load operations include a fallback via `sensor.*_board_state` attributes if websocket load command is unavailable.
 - If `entry_id` is missing/invalid and exactly one board-state sensor exists, the card auto-resolves to that entry.
+- Card config editor compatibility is included to reduce `configuration error` issues in some Home Assistant frontend builds.
 - `People` and board data are persisted in Home Assistant storage and shared across clients/devices.
 - Default chores/members entered during integration setup are used as starter board data.
 - The card layout is optimized for tablet-sized dashboards (including iPad-width screens).
