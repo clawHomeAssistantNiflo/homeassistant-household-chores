@@ -722,7 +722,9 @@ class HouseholdChoresCard extends HTMLElement {
   }
 }
 
-customElements.define("household-chores-card", HouseholdChoresCard);
+if (!customElements.get("household-chores-card")) {
+  customElements.define("household-chores-card", HouseholdChoresCard);
+}
 
 window.customCards = window.customCards || [];
 window.customCards.push({
