@@ -432,10 +432,28 @@ class HouseholdChoresCard extends HTMLElement {
     return items;
   }
 
+  _buildOneOffWeekdayInstances(title, assignees, weekdays, endDate = "") {
+    const items = [];
+    for (const dayKey of weekdays) {
+      items.push({
+        id: `task_${Math.random().toString(36).slice(2, 10)}`,
+        title: title.trim(),
+        assignees: [...assignees],
+        column: dayKey,
+        order: 0,
+        created_at: new Date().toISOString(),
+        end_date: endDate || "",
+        template_id: "",
+        fixed: false,
+      });
+    }
+    return items;
+  }
+
   async _createTaskFromForm() {
     const form = this._taskForm;
     if (!form.title.trim()) return;
-    const effectiveFixed = form.fixed || form.weekdays.length > 0;
+    const effectiveFixed = form.fixed;
 
     if (effectiveFixed) {
       if (!form.endDate) {
@@ -460,6 +478,9 @@ class HouseholdChoresCard extends HTMLElement {
       const instances = this._buildFixedInstancesForCurrentWeek(template, template.title, template.assignees);
       this._board.templates = [...this._board.templates, template];
       this._board.tasks = [...this._board.tasks, ...instances];
+    } else if (form.weekdays.length > 0) {
+      const oneOffInstances = this._buildOneOffWeekdayInstances(form.title, form.assignees, form.weekdays, form.endDate || "");
+      this._board.tasks = [...this._board.tasks, ...oneOffInstances];
     } else {
       this._board.tasks = [
         ...this._board.tasks,
@@ -486,7 +507,7 @@ class HouseholdChoresCard extends HTMLElement {
     const form = this._taskForm;
     const original = this._board.tasks.find((t) => t.id === form.taskId);
     if (!original) return;
-    const effectiveFixed = form.fixed || form.weekdays.length > 0;
+    const effectiveFixed = form.fixed;
 
     if (effectiveFixed) {
       if (!form.endDate || !form.weekdays.length) {
@@ -529,17 +550,22 @@ class HouseholdChoresCard extends HTMLElement {
         this._board.tasks = this._board.tasks.filter((t) => t.id !== original.id);
       }
 
-      this._board.tasks.push({
-        id: original.id,
-        title: form.title.trim(),
-        assignees: [...form.assignees],
-        column: form.column,
-        order: this._tasksForColumn(form.column).length,
-        created_at: original.created_at,
-        end_date: form.endDate || "",
-        template_id: "",
-        fixed: false,
-      });
+      if (form.weekdays.length > 0) {
+        const oneOffInstances = this._buildOneOffWeekdayInstances(form.title, form.assignees, form.weekdays, form.endDate || "");
+        this._board.tasks.push(...oneOffInstances);
+      } else {
+        this._board.tasks.push({
+          id: original.id,
+          title: form.title.trim(),
+          assignees: [...form.assignees],
+          column: form.column,
+          order: this._tasksForColumn(form.column).length,
+          created_at: original.created_at,
+          end_date: form.endDate || "",
+          template_id: "",
+          fixed: false,
+        });
+      }
     }
 
     this._reindexAllColumns();
@@ -662,6 +688,7 @@ class HouseholdChoresCard extends HTMLElement {
                 )
                 .join("")}
             </div>
+            <div class="small">Without fixed: selected weekdays create one-off tasks for this week and do not require end date.</div>
             <div class="modal-actions">
               ${form.mode === "edit" ? '<button type="button" class="danger" id="delete-task">Delete</button>' : ""}
               <button type="submit" ${this._saving ? "disabled" : ""}>${this._saving ? "Saving..." : form.mode === "edit" ? "Save" : "Create"}</button>
