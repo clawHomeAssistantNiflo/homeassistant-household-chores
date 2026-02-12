@@ -102,7 +102,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if removed:
             _LOGGER.info("Nightly cleanup removed %s done tasks for entry %s", removed, entry.entry_id)
 
-    async def _async_weekly_refresh(_now) -> None:
+    async def _async_weekly_refresh(now) -> None:
+        if now.weekday() != refresh_weekday:
+            return
         refreshed = await board_store.async_weekly_refresh()
         _LOGGER.info("Weekly refresh rebuilt %s tasks for entry %s", refreshed, entry.entry_id)
 
@@ -119,7 +121,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hour=refresh_hour,
         minute=refresh_minute,
         second=0,
-        weekday=refresh_weekday,
     )
     domain_data["entry_unsubs"][entry.entry_id] = [cleanup_unsub, weekly_unsub]
 
