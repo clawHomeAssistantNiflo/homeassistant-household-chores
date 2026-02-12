@@ -336,6 +336,19 @@ class HouseholdChoresCard extends HTMLElement {
     this._render();
   }
 
+  _openAddTaskModalForColumn(columnKey) {
+    const next = this._emptyTaskForm("add");
+    const isWeekday = this._weekdayKeys().some((item) => item.key === columnKey);
+    if (isWeekday) {
+      next.weekdays = [columnKey];
+    } else {
+      next.column = columnKey;
+    }
+    this._taskForm = next;
+    this._showTaskModal = true;
+    this._render();
+  }
+
   _openEditTaskModal(taskId) {
     const task = this._board.tasks.find((t) => t.id === taskId);
     if (!task) return;
@@ -678,11 +691,17 @@ class HouseholdChoresCard extends HTMLElement {
   _renderColumn(column) {
     const tasks = this._tasksForColumn(column.key);
     const isSideLane = column.key === "backlog" || column.key === "done";
+    const emptyContent = `
+      <div class="empty-wrap ${isSideLane ? "side-empty" : "week-empty"}">
+        <div class="empty">Drop here</div>
+        <button type="button" class="empty-add" data-add-column="${column.key}">Add task</button>
+      </div>
+    `;
     return `
       <section class="column ${isSideLane ? "side-lane" : "week-lane"}" data-column="${column.key}">
         <header><h3>${column.label}</h3><span>${tasks.length}</span></header>
         <div class="tasks">
-          ${tasks.length ? tasks.map((task) => this._renderTaskCard(task)).join("") : '<div class="empty">Drop here</div>'}
+          ${tasks.length ? tasks.map((task) => this._renderTaskCard(task)).join("") : emptyContent}
         </div>
       </section>
     `;
@@ -811,7 +830,11 @@ class HouseholdChoresCard extends HTMLElement {
         .task-title{font-size:.78rem;font-weight:600;line-height:1.25}
         .task-sub{margin-top:4px;color:#64748b;font-size:.73rem}
         .task-meta{margin-top:6px;display:flex;gap:4px;flex-wrap:wrap}
+        .empty-wrap{display:grid;gap:6px;align-content:start}
+        .week-empty{grid-template-columns:1fr}
+        .side-empty{grid-template-columns:1fr auto;align-items:start}
         .empty{border:1px dashed #cbd5e1;border-radius:9px;padding:10px 8px;color:#94a3b8;text-align:center;font-size:.77rem}
+        .empty-add{background:#0f766e;color:#fff;border:1px solid transparent;border-radius:9px;padding:8px 10px;font-size:.78rem;cursor:pointer}
         .empty-mini{color:#94a3b8;font-size:.8rem}
         .loading{color:var(--hc-muted);font-size:.85rem}
         .error{color:#b91c1c;font-size:.85rem;background:#fee2e2;border:1px solid #fecaca;padding:8px;border-radius:8px}
@@ -898,6 +921,7 @@ class HouseholdChoresCard extends HTMLElement {
     const taskFixedInput = this.shadowRoot.querySelector("#task-fixed");
     const deleteTaskBtn = this.shadowRoot.querySelector("#delete-task");
     const deletePersonButtons = this.shadowRoot.querySelectorAll("[data-delete-person-id]");
+    const emptyAddButtons = this.shadowRoot.querySelectorAll("[data-add-column]");
 
     if (openPeopleBtn) openPeopleBtn.addEventListener("click", () => this._openPeopleModal());
     if (openTaskBtn) openTaskBtn.addEventListener("click", () => this._openAddTaskModal());
@@ -923,6 +947,9 @@ class HouseholdChoresCard extends HTMLElement {
     if (deleteTaskBtn) deleteTaskBtn.addEventListener("click", () => this._onDeleteTask());
     deletePersonButtons.forEach((btn) => {
       btn.addEventListener("click", () => this._onDeletePerson(btn.dataset.deletePersonId));
+    });
+    emptyAddButtons.forEach((btn) => {
+      btn.addEventListener("click", () => this._openAddTaskModalForColumn(btn.dataset.addColumn));
     });
 
     this.shadowRoot.querySelectorAll(".weekday-dot").forEach((dot) => {
