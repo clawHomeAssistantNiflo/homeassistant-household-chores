@@ -39,6 +39,7 @@ class HouseholdChoresCard extends HTMLElement {
     this._dataImportError = "";
     this._lastSyncedBoard = null;
     this._newQuickTemplateName = "";
+    this._personColorSaveTimer = null;
 
     this._taskForm = this._emptyTaskForm("add");
     this._settingsForm = this._emptySettingsForm();
@@ -801,6 +802,7 @@ class HouseholdChoresCard extends HTMLElement {
   _closePeopleModal() {
     this._showPeopleModal = false;
     this._render();
+    this._flushQueuedPersonColorSave();
   }
 
   _openAddTaskModal() {
@@ -1266,7 +1268,26 @@ class HouseholdChoresCard extends HTMLElement {
     await this._saveBoard();
   }
 
-  async _onChangePersonColor(personId, color) {
+  _queuePersonColorSave() {
+    if (this._personColorSaveTimer) clearTimeout(this._personColorSaveTimer);
+    this._personColorSaveTimer = setTimeout(async () => {
+      this._personColorSaveTimer = null;
+      try {
+        await this._saveBoard();
+      } catch (_err) {
+        // _saveBoard already handles and surfaces errors.
+      }
+    }, 260);
+  }
+
+  _flushQueuedPersonColorSave() {
+    if (!this._personColorSaveTimer) return;
+    clearTimeout(this._personColorSaveTimer);
+    this._personColorSaveTimer = null;
+    void this._saveBoard();
+  }
+
+  _onChangePersonColor(personId, color, { commit = false } = {}) {
     const nextColor = this._normalizeHexColor(color);
     let changed = false;
     this._board.people = this._board.people.map((person) => {
@@ -1277,8 +1298,7 @@ class HouseholdChoresCard extends HTMLElement {
       return { ...person, color: nextColor };
     });
     if (!changed) return;
-    this._render();
-    await this._saveBoard();
+    if (commit) this._queuePersonColorSave();
   }
 
   _personRoleLabel(role) {
@@ -2800,7 +2820,8 @@ class HouseholdChoresCard extends HTMLElement {
       select.addEventListener("change", (ev) => this._onChangePersonRole(select.dataset.personRoleId, ev.target.value));
     });
     personColorSelects.forEach((input) => {
-      input.addEventListener("change", (ev) => this._onChangePersonColor(input.dataset.personColorId, ev.target.value));
+      input.addEventListener("input", (ev) => this._onChangePersonColor(input.dataset.personColorId, ev.target.value, { commit: false }));
+      input.addEventListener("change", (ev) => this._onChangePersonColor(input.dataset.personColorId, ev.target.value, { commit: true }));
     });
     this.shadowRoot.querySelectorAll(".weekday-dot").forEach((dot) => {
       dot.addEventListener("click", () => this._toggleTaskWeekday(dot.dataset.weekday));
