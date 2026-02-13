@@ -2337,7 +2337,7 @@ class HouseholdChoresCard extends HTMLElement {
           z-index:2;
           min-height:calc(var(--span-rows, 0) * 34px);
         }
-        .week-span-bar{pointer-events:auto}
+        .week-span-bar{pointer-events:auto;margin-inline:8px}
         .week-scroll{overflow-x:hidden}
         .week-columns{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;min-width:0}
         .side-columns{display:grid;grid-template-columns:1fr;gap:8px}
