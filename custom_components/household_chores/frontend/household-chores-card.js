@@ -1750,7 +1750,18 @@ class HouseholdChoresCard extends HTMLElement {
         .task.virtual-task{cursor:default;opacity:.96}
         .task.fixed-task{background:#ecf3ff;border-color:#b7cdf3;box-shadow:inset 3px 0 0 #3b82f6}
         .task-head{display:flex;align-items:flex-start;justify-content:space-between;gap:6px}
-        .task-title{font-size:.78rem;font-weight:600;line-height:1.34}
+        .task-title{
+          font-size:.78rem;
+          font-weight:600;
+          line-height:1.34;
+          max-width:100%;
+          overflow:hidden;
+          overflow-wrap:anywhere;
+          word-break:break-word;
+          display:-webkit-box;
+          -webkit-line-clamp:2;
+          -webkit-box-orient:vertical;
+        }
         .task-sub{margin-top:4px;color:#64748b;font-size:.73rem}
         .task-meta{margin-top:6px;display:flex;gap:4px;flex-wrap:wrap}
         .task .chip{width:19px;height:19px;font-size:.66rem}
