@@ -15,7 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DEFAULT_NAME, DOMAIN, SIGNAL_BOARD_UPDATED
 from .coordinator import HouseholdChoresCoordinator
-from .stats import person_week_stats
+from .stats import next_three_tasks_summary, person_week_stats
 
 
 async def async_setup_entry(
@@ -29,6 +29,7 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [
         NextChoreSensor(entry, coordinator),
         BoardStateSensor(entry, board_store),
+        NextThreeTasksSensor(entry, board_store),
     ]
 
     board = await board_store.async_load()
@@ -250,3 +251,64 @@ class PersonWeekTasksSensor(SensorEntity):
             self._person_color = str(person.get("color") or "")
             role_raw = str(person.get("role") or "adult").lower()
             self._person_role = role_raw if role_raw in {"adult", "child"} else "adult"
+
+
+class NextThreeTasksSensor(SensorEntity):
+    """Sensor exposing the next three upcoming open tasks."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Next 3 tasks"
+    _attr_icon = "mdi:format-list-checks"
+    _attr_should_poll = True
+
+    def __init__(self, entry: ConfigEntry, board_store: Any) -> None:
+        self._entry = entry
+        self._board_store = board_store
+        self._unsub_dispatcher = None
+        self._summary: dict[str, Any] = {"count": 0, "tasks": [], "titles": []}
+        self._attr_unique_id = f"{entry.entry_id}_next_three_tasks"
+
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to board update events."""
+        self._unsub_dispatcher = async_dispatcher_connect(
+            self.hass,
+            f"{SIGNAL_BOARD_UPDATED}_{self._entry.entry_id}",
+            self._handle_board_updated,
+        )
+        await self.async_update()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Unsubscribe from events."""
+        if self._unsub_dispatcher:
+            self._unsub_dispatcher()
+            self._unsub_dispatcher = None
+
+    @property
+    def native_value(self) -> int:
+        """Return number of available upcoming tasks (0..3)."""
+        return int(self._summary.get("count") or 0)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return upcoming task payload."""
+        return {
+            "entry_id": self._entry.entry_id,
+            "titles": list(self._summary.get("titles") or []),
+            "tasks": list(self._summary.get("tasks") or []),
+        }
+
+    def _handle_board_updated(self) -> None:
+        """Handle board updates from store."""
+        self.hass.async_create_task(self._async_refresh_and_write())
+
+    async def _async_refresh_and_write(self) -> None:
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        """Refresh from latest persisted board."""
+        try:
+            board = await self._board_store.async_load()
+        except Exception:  # noqa: BLE001
+            board = getattr(self._board_store, "_data", None) or {}
+        self._summary = next_three_tasks_summary(board, limit=3)

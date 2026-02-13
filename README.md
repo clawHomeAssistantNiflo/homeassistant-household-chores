@@ -79,6 +79,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - First-run onboarding tip banner can be dismissed and is persisted across reloads/devices
 - Persistent board data stored in Home Assistant (`.storage`)
 - Dynamic person sensors are created automatically (`sensor.household_chores_<person>_tasks`) with weekly counters + task attributes
+- New overview sensor: `sensor.household_chores_next_3_tasks` (state = 0..3, attributes include task list/titles)
 - Response services for dashboards/automations:
   - `household_chores.get_person_tasks`
   - `household_chores.get_week_summary`

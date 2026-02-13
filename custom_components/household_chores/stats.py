@@ -151,3 +151,64 @@ def person_week_stats(board: dict[str, Any], person_id: str, week_offset: int = 
         "upcoming": upcoming_count,
         "tasks": rows,
     }
+
+
+def next_three_tasks_summary(board: dict[str, Any], limit: int = 3) -> dict[str, Any]:
+    """Return the next N open tasks from today and forward."""
+    today = dt_util.as_local(dt_util.utcnow()).date()
+    current_week_start = _start_of_week(today)
+    people = board.get("people", []) if isinstance(board, dict) else []
+    tasks = board.get("tasks", []) if isinstance(board, dict) else []
+    people_by_id = {
+        str(person.get("id", "")).strip(): str(person.get("name", "")).strip()
+        for person in people
+        if isinstance(person, dict) and str(person.get("id", "")).strip()
+    }
+
+    def _task_date(raw: dict[str, Any]) -> date | None:
+        column = str(raw.get("column") or "").lower()
+        if column not in WEEKDAY_INDEX:
+            return None
+        raw_week_start = str(raw.get("week_start") or current_week_start.isoformat())
+        week_start_day = _parse_iso_day(raw_week_start)
+        normalized_start = _start_of_week(week_start_day if week_start_day is not None else current_week_start)
+        return normalized_start + timedelta(days=WEEKDAY_INDEX[column])
+
+    rows: list[dict[str, Any]] = []
+    for raw in tasks:
+        if not isinstance(raw, dict):
+            continue
+        if str(raw.get("column") or "").lower() == "done":
+            continue
+        due_day = _task_date(raw)
+        if due_day is None or due_day < today:
+            continue
+        assignee_ids = [str(item).strip() for item in raw.get("assignees", []) if str(item).strip()]
+        assignee_names = [people_by_id.get(item, item) for item in assignee_ids]
+        rows.append(
+            {
+                "id": str(raw.get("id") or ""),
+                "title": str(raw.get("title") or "Untitled task"),
+                "date": due_day.isoformat(),
+                "column": str(raw.get("column") or "").lower(),
+                "week_start": (due_day - timedelta(days=due_day.weekday())).isoformat(),
+                "week_number": _week_number(due_day),
+                "assignees": assignee_ids,
+                "assignee_names": assignee_names,
+                "order": int(raw.get("order") or 0),
+            }
+        )
+
+    rows.sort(
+        key=lambda item: (
+            item["date"],
+            int(item.get("order") or 0),
+            item.get("title", ""),
+        )
+    )
+    selected = rows[: max(0, int(limit))]
+    return {
+        "count": len(selected),
+        "tasks": selected,
+        "titles": [str(item.get("title") or "") for item in selected],
+    }
