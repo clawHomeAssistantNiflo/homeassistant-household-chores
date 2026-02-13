@@ -34,6 +34,7 @@ class HouseholdChoresCard extends HTMLElement {
     this._dataExportText = "";
     this._dataImportText = "";
     this._dataImportError = "";
+    this._lastSyncedBoard = null;
 
     this._taskForm = this._emptyTaskForm("add");
     this._settingsForm = this._emptySettingsForm();
@@ -355,11 +356,81 @@ class HouseholdChoresCard extends HTMLElement {
         },
       },
       activity: Array.isArray(board?.activity) ? board.activity.filter((item) => item && typeof item === "object").slice(0, 50) : [],
+      updated_at: String(board?.updated_at || ""),
     };
   }
 
   _snapshotBoard() {
     return JSON.parse(JSON.stringify(this._board || { people: [], tasks: [], templates: [], settings: this._defaultSettings() }));
+  }
+
+  _deepEqual(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  _mapById(items) {
+    const map = new Map();
+    (Array.isArray(items) ? items : []).forEach((item) => {
+      if (!item || typeof item !== "object") return;
+      const id = String(item.id || "");
+      if (!id) return;
+      map.set(id, item);
+    });
+    return map;
+  }
+
+  _mergeCollectionById(remoteItems, localItems, baseItems) {
+    const remoteMap = this._mapById(remoteItems);
+    const localMap = this._mapById(localItems);
+    const baseMap = this._mapById(baseItems);
+    const ids = new Set([...remoteMap.keys(), ...localMap.keys(), ...baseMap.keys()]);
+    const out = [];
+    for (const id of ids) {
+      const remoteItem = remoteMap.get(id);
+      const localItem = localMap.get(id);
+      const baseItem = baseMap.get(id);
+
+      const remoteDeleted = Boolean(baseItem) && !remoteItem;
+      const localDeleted = Boolean(baseItem) && !localItem;
+      if (remoteDeleted || localDeleted) continue;
+
+      if (remoteItem && !localItem) {
+        out.push(remoteItem);
+        continue;
+      }
+      if (localItem && !remoteItem) {
+        out.push(localItem);
+        continue;
+      }
+      if (!localItem && !remoteItem) continue;
+
+      const localChanged = !this._deepEqual(localItem, baseItem);
+      const remoteChanged = !this._deepEqual(remoteItem, baseItem);
+      if (localChanged && !remoteChanged) out.push(localItem);
+      else if (remoteChanged && !localChanged) out.push(remoteItem);
+      else out.push(localItem || remoteItem);
+    }
+    return out;
+  }
+
+  _mergeBoardsForConflict(remoteBoardRaw, localBoardRaw, baseBoardRaw) {
+    const remote = this._normalizeBoard(remoteBoardRaw || {});
+    const local = this._normalizeBoard(localBoardRaw || {});
+    const base = this._normalizeBoard(baseBoardRaw || {});
+
+    const merged = this._normalizeBoard({
+      people: this._mergeCollectionById(remote.people, local.people, base.people),
+      tasks: this._mergeCollectionById(remote.tasks, local.tasks, base.tasks),
+      templates: this._mergeCollectionById(remote.templates, local.templates, base.templates),
+      settings: this._deepEqual(local.settings, base.settings) ? remote.settings : local.settings,
+      activity: [...(Array.isArray(local.activity) ? local.activity : []), ...(Array.isArray(remote.activity) ? remote.activity : [])]
+        .filter((item) => item && typeof item === "object")
+        .filter((item, idx, arr) => arr.findIndex((x) => x.at === item.at && x.message === item.message) === idx)
+        .slice(0, 50),
+      updated_at: remote.updated_at,
+    });
+    merged.updated_at = remote.updated_at;
+    return merged;
   }
 
   _setUndo(label, snapshot) {
@@ -461,6 +532,7 @@ class HouseholdChoresCard extends HTMLElement {
     try {
       const result = await this._callBoardWs({ type: "household_chores/get_board", entry_id: this._config.entry_id });
       this._board = this._normalizeBoard(result.board || { people: [], tasks: [], templates: [] });
+      this._lastSyncedBoard = this._snapshotBoard();
       this._setPersonFilter(this._personFilter);
       this._error = "";
     } catch (err) {
@@ -469,6 +541,7 @@ class HouseholdChoresCard extends HTMLElement {
         const fallbackBoard = this._loadBoardFromStateEntity();
         if (fallbackBoard) {
           this._board = this._normalizeBoard(fallbackBoard);
+          this._lastSyncedBoard = this._snapshotBoard();
           this._setPersonFilter(this._personFilter);
           this._error = "";
         } else {
@@ -516,22 +589,44 @@ class HouseholdChoresCard extends HTMLElement {
     this._saving = true;
     this._render();
     try {
+      const expectedUpdatedAt = String(this._lastSyncedBoard?.updated_at || this._board?.updated_at || "");
       const result = await this._callBoardWs({
         type: "household_chores/save_board",
         entry_id: this._config.entry_id,
         board: this._board,
+        expected_updated_at: expectedUpdatedAt,
       });
       this._board = this._normalizeBoard(result.board || this._board);
+      this._lastSyncedBoard = this._snapshotBoard();
       this._setPersonFilter(this._personFilter);
       this._error = "";
     } catch (err) {
       const message = String(err?.message || err || "");
-      if (message.toLowerCase().includes("unknown command")) {
+      if (message.toLowerCase().includes("conflict")) {
+        try {
+          const latest = await this._callBoardWs({ type: "household_chores/get_board", entry_id: this._config.entry_id });
+          const latestBoard = this._normalizeBoard(latest.board || {});
+          const mergedBoard = this._mergeBoardsForConflict(latestBoard, this._board, this._lastSyncedBoard || latestBoard);
+          const retry = await this._callBoardWs({
+            type: "household_chores/save_board",
+            entry_id: this._config.entry_id,
+            board: mergedBoard,
+            expected_updated_at: String(latestBoard.updated_at || ""),
+          });
+          this._board = this._normalizeBoard(retry.board || mergedBoard);
+          this._lastSyncedBoard = this._snapshotBoard();
+          this._setPersonFilter(this._personFilter);
+          this._error = "";
+        } catch (mergeErr) {
+          this._error = `Failed to save board after merge: ${mergeErr?.message || mergeErr}`;
+        }
+      } else if (message.toLowerCase().includes("unknown command")) {
         try {
           await this._hass.callService("household_chores", "save_board", {
             entry_id: this._config.entry_id,
             board: this._board,
           });
+          this._lastSyncedBoard = this._snapshotBoard();
           this._error = "";
         } catch (serviceErr) {
           this._error = `Failed to save board: ${serviceErr?.message || serviceErr}`;

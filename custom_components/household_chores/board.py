@@ -46,6 +46,7 @@ class Person:
     name: str
     color: str
     role: str = "adult"
+    avatar: str = "adult_man"
 
 
 @dataclass(slots=True)
@@ -106,8 +107,23 @@ class HouseholdBoardStore:
         await self._store.async_save(self._data)
         return self._data
 
-    async def async_save(self, board: dict[str, Any]) -> dict[str, Any]:
+    async def async_save(
+        self,
+        board: dict[str, Any],
+        *,
+        expected_updated_at: str | None = None,
+    ) -> dict[str, Any]:
         """Persist normalized board state."""
+        if self._data is None:
+            await self.async_load()
+
+        if expected_updated_at is not None:
+            current_updated_at = str((self._data or {}).get("updated_at") or "")
+            if current_updated_at and expected_updated_at != current_updated_at:
+                raise BoardConflictError(
+                    f"Board changed by another client (expected {expected_updated_at}, current {current_updated_at})"
+                )
+
         self._data = self._normalize_board(board)
         await self._store.async_save(self._data)
         async_dispatcher_send(self._hass, f"{SIGNAL_BOARD_UPDATED}_{self._entry_id}")
@@ -322,7 +338,12 @@ class HouseholdBoardStore:
             color = str(person.get("color") or DEFAULT_COLORS[len(normalized_people) % len(DEFAULT_COLORS)])
             role_raw = str(person.get("role") or "adult").lower()
             role = role_raw if role_raw in {"adult", "child"} else "adult"
-            normalized_people.append({"id": person_id, "name": name, "color": color, "role": role})
+            avatar_raw = str(person.get("avatar") or "").lower()
+            if avatar_raw not in {"adult_man", "adult_woman", "child_boy", "child_girl"}:
+                avatar_raw = "child_boy" if role == "child" else "adult_man"
+            normalized_people.append(
+                {"id": person_id, "name": name, "color": color, "role": role, "avatar": avatar_raw}
+            )
 
         normalized_templates: list[dict[str, Any]] = []
         for template in templates:
@@ -470,3 +491,7 @@ def _safe_int(value: Any, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+class BoardConflictError(RuntimeError):
+    """Raised when board save revision is stale."""

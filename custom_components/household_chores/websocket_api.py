@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
+from .board import BoardConflictError
 from .const import DOMAIN
 
 
@@ -40,6 +41,7 @@ async def ws_get_board(
         vol.Required("type"): "household_chores/save_board",
         vol.Required("entry_id"): str,
         vol.Required("board"): dict,
+        vol.Optional("expected_updated_at"): str,
     }
 )
 @websocket_api.async_response
@@ -55,7 +57,14 @@ async def ws_save_board(
         connection.send_error(msg["id"], "entry_not_found", f"No board found for entry_id={entry_id}")
         return
 
-    board = await board_store.async_save(msg["board"])
+    try:
+        board = await board_store.async_save(
+            msg["board"],
+            expected_updated_at=msg.get("expected_updated_at"),
+        )
+    except BoardConflictError as err:
+        connection.send_error(msg["id"], "conflict", str(err))
+        return
     connection.send_result(msg["id"], {"entry_id": entry_id, "board": board})
 
 
