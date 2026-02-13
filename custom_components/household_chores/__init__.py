@@ -6,9 +6,9 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME
+from homeassistant.const import CONF_NAME, EVENT_STATE_CHANGED, SERVICE_RESTART, STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import async_call_later, async_track_time_change
 
 from .board import HouseholdBoardStore
 from .const import (
@@ -40,6 +40,8 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
     domain_data.setdefault("logger", _LOGGER)
     domain_data.setdefault("boards", {})
     domain_data.setdefault("entry_unsubs", {})
+    domain_data.setdefault("restart_watcher_unsub", None)
+    domain_data.setdefault("restart_pending", False)
     if not domain_data.get("ws_registered"):
         _try_register_ws(hass, domain_data)
     if not domain_data.get("card_registered"):
@@ -48,6 +50,7 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
     if not domain_data.get("services_registered"):
         await async_register_services(hass)
         domain_data["services_registered"] = True
+    _ensure_auto_restart_watcher(hass, domain_data)
     return True
 
 
@@ -79,12 +82,61 @@ def _try_register_ws(hass: HomeAssistant, domain_data: dict[str, Any]) -> None:
         _LOGGER.warning("Websocket registration failed, using fallback paths: %s", err)
 
 
+def _is_household_update_entity(entity_id: str, state_obj: Any) -> bool:
+    if not entity_id.startswith("update."):
+        return False
+    attrs = getattr(state_obj, "attributes", {}) or {}
+    title = str(attrs.get("title", "")).lower()
+    friendly_name = str(attrs.get("friendly_name", "")).lower()
+    return "household chores" in title or "household chores" in friendly_name
+
+
+def _ensure_auto_restart_watcher(hass: HomeAssistant, domain_data: dict[str, Any]) -> None:
+    if domain_data.get("restart_watcher_unsub"):
+        return
+
+    async def _handle_update_install(event) -> None:
+        if domain_data.get("restart_pending"):
+            return
+        entity_id = str(event.data.get("entity_id", ""))
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
+        if old_state is None or new_state is None:
+            return
+        if not _is_household_update_entity(entity_id, new_state):
+            return
+        if old_state.state != STATE_ON or new_state.state != STATE_OFF:
+            return
+
+        domain_data["restart_pending"] = True
+        _LOGGER.info("Detected Household Chores update installation. Scheduling Home Assistant restart.")
+
+        async def _restart_later(_now) -> None:
+            try:
+                await hass.services.async_call(
+                    "homeassistant",
+                    SERVICE_RESTART,
+                    {},
+                    blocking=False,
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Automatic restart after update failed: %s", err)
+            finally:
+                domain_data["restart_pending"] = False
+
+        async_call_later(hass, 8, _restart_later)
+
+    domain_data["restart_watcher_unsub"] = hass.bus.async_listen(EVENT_STATE_CHANGED, _handle_update_install)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Household Chores from a config entry."""
     domain_data = hass.data.setdefault(DOMAIN, {})
     domain_data.setdefault("logger", _LOGGER)
     domain_data.setdefault("boards", {})
     domain_data.setdefault("entry_unsubs", {})
+    domain_data.setdefault("restart_watcher_unsub", None)
+    domain_data.setdefault("restart_pending", False)
     if not domain_data.get("ws_registered"):
         _try_register_ws(hass, domain_data)
     if not domain_data.get("card_registered"):
@@ -93,6 +145,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not domain_data.get("services_registered"):
         await async_register_services(hass)
         domain_data["services_registered"] = True
+    _ensure_auto_restart_watcher(hass, domain_data)
 
     name = entry.options.get(CONF_NAME, entry.data.get(CONF_NAME, DEFAULT_NAME))
     members = _as_list(entry.options.get(CONF_MEMBERS, entry.data.get(CONF_MEMBERS)), DEFAULT_MEMBERS)
@@ -166,6 +219,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             unsub()
         hass.data[DOMAIN]["boards"].pop(entry.entry_id, None)
         hass.data[DOMAIN].pop(entry.entry_id, None)
+        if not hass.data[DOMAIN].get("boards"):
+            restart_unsub = hass.data[DOMAIN].pop("restart_watcher_unsub", None)
+            if restart_unsub:
+                restart_unsub()
+            hass.data[DOMAIN]["restart_pending"] = False
     return unload_ok
 
 
