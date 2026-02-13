@@ -62,6 +62,9 @@ class Task:
     end_date: str | None = None
     template_id: str | None = None
     fixed: bool = False
+    span_id: str | None = None
+    span_index: int = 0
+    span_total: int = 0
     week_start: str | None = None
     week_number: int | None = None
 
@@ -414,6 +417,11 @@ class HouseholdBoardStore:
             end_date = _parse_date(task.get("end_date"))
             template_id = str(task.get("template_id")) if task.get("template_id") else None
             fixed = bool(task.get("fixed", False))
+            span_id = str(task.get("span_id")) if task.get("span_id") else None
+            span_index_raw = task.get("span_index")
+            span_total_raw = task.get("span_total")
+            span_index = int(span_index_raw) if isinstance(span_index_raw, int) and span_index_raw >= 0 else 0
+            span_total = int(span_total_raw) if isinstance(span_total_raw, int) and span_total_raw >= 0 else 0
             week_start = _parse_date(task.get("week_start"))
             if column in WEEKDAY_INDEX and week_start is None:
                 week_start = _week_start_for_day(dt_util.as_local(dt_util.utcnow()).date())
@@ -433,6 +441,9 @@ class HouseholdBoardStore:
                     "end_date": end_date.isoformat() if end_date else None,
                     "template_id": template_id,
                     "fixed": fixed,
+                    "span_id": span_id,
+                    "span_index": span_index,
+                    "span_total": span_total,
                     "week_start": week_start.isoformat() if week_start else None,
                     "week_number": week_number,
                 }

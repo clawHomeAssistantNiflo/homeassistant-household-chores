@@ -68,6 +68,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Optional fixed recurring tasks with:
   - end date
   - weekday selection (`M T W T F S S`)
+- Optional `All-day` task mode (non-fixed): choose consecutive weekdays and show one continuous multi-day task across the week (ideal for course/travel)
 - Weekday selection is always available in task modal; selecting weekdays hides single-column selector
 - Without `Fixed until date`, selected weekdays create one-off tasks for this week and do not require end date
 - Drag-and-drop tasks between weekdays and completed

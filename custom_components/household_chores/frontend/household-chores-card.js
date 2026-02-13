@@ -103,8 +103,10 @@ class HouseholdChoresCard extends HTMLElement {
       mode,
       taskId: "",
       templateId: "",
+      spanId: "",
       title: "",
       fixed: false,
+      allDaySpan: false,
       endDate: "",
       column: "monday",
       weekdays: [],
@@ -370,6 +372,9 @@ class HouseholdChoresCard extends HTMLElement {
           end_date: t.end_date || "",
           template_id: String(t.template_id || ""),
           fixed: Boolean(t.fixed),
+          span_id: String(t.span_id || ""),
+          span_index: Number.isFinite(t.span_index) ? t.span_index : 0,
+          span_total: Number.isFinite(t.span_total) ? t.span_total : 0,
           week_start: isWeekday ? (t.week_start || currentWeekStart) : "",
           week_number: Number.isFinite(t.week_number) ? t.week_number : this._weekNumberForOffset(0),
         };
@@ -804,19 +809,29 @@ class HouseholdChoresCard extends HTMLElement {
       tpl.assignees = [...sanitizedTplAssignees];
     }
 
+    const spanGroup = this._taskSpanGroup(task);
+    const spanWeekdays = this._sortedWeekdays(
+      spanGroup
+        .map((item) => item.column)
+        .filter((dayKey) => this._weekdayKeys().some((d) => d.key === dayKey))
+    );
     const weekdays = tpl?.weekdays?.length
       ? [...tpl.weekdays]
-      : this._weekdayKeys().some((d) => d.key === task.column)
-        ? [task.column]
-        : [];
+      : spanWeekdays.length
+        ? spanWeekdays
+        : this._weekdayKeys().some((d) => d.key === task.column)
+          ? [task.column]
+          : [];
     const occurrenceDate = this._taskOccurrenceDate(task);
 
     this._taskForm = {
       mode: "edit",
       taskId: task.id,
       templateId: task.template_id || "",
+      spanId: task.span_id || "",
       title: task.title,
       fixed: Boolean(task.fixed),
+      allDaySpan: Boolean(task.span_id),
       endDate: task.end_date || tpl?.end_date || "",
       column: task.column || "monday",
       weekdays,
@@ -845,8 +860,10 @@ class HouseholdChoresCard extends HTMLElement {
       mode: "edit",
       taskId: "",
       templateId: tpl.id,
+      spanId: "",
       title: tpl.title || "",
       fixed: true,
+      allDaySpan: false,
       endDate: tpl.end_date || "",
       column: fallbackColumn || "monday",
       weekdays: Array.isArray(tpl.weekdays) ? [...tpl.weekdays] : [],
@@ -953,6 +970,7 @@ class HouseholdChoresCard extends HTMLElement {
       ...this._emptyTaskForm("add"),
       title,
       column: "monday",
+      allDaySpan: false,
     };
     this._taskFormOriginal = null;
     this._taskFormDirty = false;
@@ -964,11 +982,14 @@ class HouseholdChoresCard extends HTMLElement {
     const task = this._board.tasks.find((item) => item.id === taskId);
     if (!task || task.virtual || task.column === "done") return;
     const snapshot = this._snapshotBoard();
-    task.column = "done";
-    task.week_start = this._weekStartIso(this._weekOffset);
-    task.week_number = this._weekNumberForOffset(this._weekOffset);
+    const targets = this._taskSpanGroup(task);
+    for (const item of targets) {
+      item.column = "done";
+      item.week_start = this._weekStartIso(this._weekOffset);
+      item.week_number = this._weekNumberForOffset(this._weekOffset);
+    }
     this._reindexAllColumns();
-    this._setUndo("Task moved to Completed", snapshot);
+    this._setUndo(targets.length > 1 ? "All-day task moved to Completed" : "Task moved to Completed", snapshot);
     this._render();
     await this._saveBoard();
   }
@@ -976,6 +997,10 @@ class HouseholdChoresCard extends HTMLElement {
   async _quickDeleteTask(taskId, { viaSwipe = false } = {}) {
     const task = this._board.tasks.find((item) => item.id === taskId);
     if (!task || task.virtual) return;
+    if (viaSwipe && task.span_id) {
+      const ok = window.confirm("Delete this all-day task across selected days?");
+      if (!ok) return;
+    }
     if (viaSwipe && (task.fixed || task.template_id)) {
       const ok = window.confirm("Delete this fixed occurrence only? Use edit modal to delete full series.");
       if (!ok) return;
@@ -995,11 +1020,15 @@ class HouseholdChoresCard extends HTMLElement {
         if (!occurrenceDate) return false;
         return this._taskOccurrenceDate(t) !== occurrenceDate;
       });
+    } else if (task.span_id) {
+      const group = this._taskSpanGroup(task);
+      const ids = new Set(group.map((item) => item.id));
+      this._board.tasks = this._board.tasks.filter((t) => !ids.has(t.id));
     } else {
       this._board.tasks = this._board.tasks.filter((t) => t.id !== task.id);
     }
     this._reindexAllColumns();
-    this._setUndo("Task deleted", snapshot);
+    this._setUndo(task.span_id ? "All-day task deleted" : "Task deleted", snapshot);
     this._render();
     await this._saveBoard();
   }
@@ -1239,7 +1268,14 @@ class HouseholdChoresCard extends HTMLElement {
   }
 
   _onTaskFieldInput(field, value) {
-    this._taskForm = { ...this._taskForm, [field]: value };
+    const next = { ...this._taskForm, [field]: value };
+    if (field === "fixed" && value) {
+      next.allDaySpan = false;
+    }
+    if (field === "allDaySpan" && value && (!Array.isArray(next.weekdays) || !next.weekdays.length)) {
+      if (this._weekdayKeys().some((day) => day.key === next.column)) next.weekdays = [next.column];
+    }
+    this._taskForm = next;
     this._recalcTaskFormDirty();
     this._updateSubmitButtons();
   }
@@ -1262,6 +1298,7 @@ class HouseholdChoresCard extends HTMLElement {
     return {
       title: (form.title || "").trim(),
       fixed: Boolean(form.fixed),
+      allDaySpan: Boolean(form.allDaySpan),
       endDate: form.endDate || "",
       column: form.column || "monday",
       weekdays: [...(form.weekdays || [])].sort(),
@@ -1349,9 +1386,33 @@ class HouseholdChoresCard extends HTMLElement {
     const set = new Set(this._taskForm.weekdays);
     if (set.has(dayKey)) set.delete(dayKey);
     else set.add(dayKey);
-    this._taskForm = { ...this._taskForm, weekdays: [...set] };
+    this._taskForm = { ...this._taskForm, weekdays: this._sortedWeekdays([...set]) };
     this._recalcTaskFormDirty();
     this._render();
+  }
+
+  _sortedWeekdays(days) {
+    const dayOrder = new Map(this._weekdayKeys().map((day, index) => [day.key, index]));
+    return [...new Set(days.filter((day) => dayOrder.has(day)))].sort((a, b) => dayOrder.get(a) - dayOrder.get(b));
+  }
+
+  _areContiguousWeekdays(days) {
+    const sorted = this._sortedWeekdays(days);
+    if (sorted.length < 2) return false;
+    const dayOrder = new Map(this._weekdayKeys().map((day, index) => [day.key, index]));
+    for (let i = 1; i < sorted.length; i += 1) {
+      if (dayOrder.get(sorted[i]) !== dayOrder.get(sorted[i - 1]) + 1) return false;
+    }
+    return true;
+  }
+
+  _taskSpanGroup(task) {
+    if (!task?.span_id) return task ? [task] : [];
+    return this._board.tasks.filter(
+      (item) =>
+        item.span_id === task.span_id &&
+        String(item.week_start || "") === String(task.week_start || "")
+    );
   }
 
   _buildFixedInstancesForCurrentWeek(template, title, assignees) {
@@ -1376,6 +1437,9 @@ class HouseholdChoresCard extends HTMLElement {
         end_date: template.end_date,
         template_id: template.id,
         fixed: true,
+        span_id: "",
+        span_index: 0,
+        span_total: 0,
         week_start: weekStart,
         week_number: weekNumber,
       });
@@ -1403,11 +1467,43 @@ class HouseholdChoresCard extends HTMLElement {
         end_date: endDate || "",
         template_id: "",
         fixed: false,
+        span_id: "",
+        span_index: 0,
+        span_total: 0,
         week_start: weekStart,
         week_number: weekNumber,
       });
     }
     return items;
+  }
+
+  _buildAllDaySpanInstances(
+    title,
+    assignees,
+    weekdays,
+    endDate = "",
+    weekStart = this._weekStartIso(this._weekOffset),
+    weekNumber = this._weekNumberForOffset(this._weekOffset),
+    spanId = `span_${Math.random().toString(36).slice(2, 10)}`
+  ) {
+    const sorted = this._sortedWeekdays(weekdays);
+    const total = sorted.length;
+    return sorted.map((dayKey, index) => ({
+      id: `task_${Math.random().toString(36).slice(2, 10)}`,
+      title: title.trim(),
+      assignees: [...assignees],
+      column: dayKey,
+      order: 0,
+      created_at: new Date().toISOString(),
+      end_date: endDate || "",
+      template_id: "",
+      fixed: false,
+      span_id: spanId,
+      span_index: index,
+      span_total: total,
+      week_start: weekStart,
+      week_number: weekNumber,
+    }));
   }
 
   async _createTaskFromForm() {
@@ -1439,6 +1535,20 @@ class HouseholdChoresCard extends HTMLElement {
       const instances = this._buildFixedInstancesForCurrentWeek(template, template.title, template.assignees);
       this._board.templates = [...this._board.templates, template];
       this._board.tasks = [...this._board.tasks, ...instances];
+    } else if (form.allDaySpan) {
+      const weekdays = this._sortedWeekdays(form.weekdays);
+      if (weekdays.length < 2) {
+        this._error = "All-day tasks require at least two selected days.";
+        this._render();
+        return;
+      }
+      if (!this._areContiguousWeekdays(weekdays)) {
+        this._error = "All-day tasks must use consecutive days.";
+        this._render();
+        return;
+      }
+      const allDayInstances = this._buildAllDaySpanInstances(form.title, form.assignees, weekdays, form.endDate || "");
+      this._board.tasks = [...this._board.tasks, ...allDayInstances];
     } else if (form.weekdays.length > 0) {
       const oneOffInstances = this._buildOneOffWeekdayInstances(form.title, form.assignees, form.weekdays, form.endDate || "");
       this._board.tasks = [...this._board.tasks, ...oneOffInstances];
@@ -1455,6 +1565,9 @@ class HouseholdChoresCard extends HTMLElement {
         end_date: form.endDate || "",
         template_id: "",
         fixed: false,
+        span_id: "",
+        span_index: 0,
+        span_total: 0,
         week_start: this._weekStartIso(this._weekOffset),
         week_number: this._weekNumberForOffset(this._weekOffset),
       },
@@ -1476,6 +1589,8 @@ class HouseholdChoresCard extends HTMLElement {
     const originalCreatedAt = original?.created_at || templateRef?.created_at || new Date().toISOString();
     const originalWeekNumber = original?.week_number || this._weekNumberForOffset(this._weekOffset);
     const existingExcludedDates = Array.isArray(templateRef?.excluded_dates) ? [...templateRef.excluded_dates] : [];
+    const editSpanId = original?.span_id || form.spanId || "";
+    const originalSpanWeekStart = original?.week_start || this._weekStartIso(this._weekOffset);
 
     if (effectiveFixed) {
       if (!form.endDate || !form.weekdays.length) {
@@ -1516,10 +1631,38 @@ class HouseholdChoresCard extends HTMLElement {
         this._board.templates = this._board.templates.filter((tpl) => tpl.id !== baseTemplateId);
         this._board.tasks = this._board.tasks.filter((t) => t.template_id !== baseTemplateId);
       } else if (original) {
-        this._board.tasks = this._board.tasks.filter((t) => t.id !== original.id);
+        if (editSpanId) {
+          this._board.tasks = this._board.tasks.filter(
+            (t) => !(t.span_id === editSpanId && String(t.week_start || "") === String(originalSpanWeekStart || ""))
+          );
+        } else {
+          this._board.tasks = this._board.tasks.filter((t) => t.id !== original.id);
+        }
       }
 
-      if (form.weekdays.length > 0) {
+      if (form.allDaySpan) {
+        const weekdays = this._sortedWeekdays(form.weekdays);
+        if (weekdays.length < 2) {
+          this._error = "All-day tasks require at least two selected days.";
+          this._render();
+          return;
+        }
+        if (!this._areContiguousWeekdays(weekdays)) {
+          this._error = "All-day tasks must use consecutive days.";
+          this._render();
+          return;
+        }
+        const allDayInstances = this._buildAllDaySpanInstances(
+          form.title,
+          form.assignees,
+          weekdays,
+          form.endDate || "",
+          this._weekStartIso(this._weekOffset),
+          this._weekNumberForOffset(this._weekOffset),
+          editSpanId || undefined
+        );
+        this._board.tasks.push(...allDayInstances);
+      } else if (form.weekdays.length > 0) {
         const oneOffInstances = this._buildOneOffWeekdayInstances(form.title, form.assignees, form.weekdays, form.endDate || "");
         this._board.tasks.push(...oneOffInstances);
       } else {
@@ -1533,6 +1676,9 @@ class HouseholdChoresCard extends HTMLElement {
           end_date: form.endDate || "",
           template_id: "",
           fixed: false,
+          span_id: "",
+          span_index: 0,
+          span_total: 0,
           week_start: this._weekStartIso(this._weekOffset),
           week_number: originalWeekNumber,
         });
@@ -1578,12 +1724,19 @@ class HouseholdChoresCard extends HTMLElement {
         });
       }
     } else {
-      this._board.tasks = this._board.tasks.filter((t) => t.id !== task.id);
+      if (task.span_id) {
+        const spanWeekStart = task.week_start || this._weekStartIso(this._weekOffset);
+        this._board.tasks = this._board.tasks.filter(
+          (t) => !(t.span_id === task.span_id && String(t.week_start || "") === String(spanWeekStart || ""))
+        );
+      } else {
+        this._board.tasks = this._board.tasks.filter((t) => t.id !== task.id);
+      }
     }
 
     this._reindexAllColumns();
     this._closeTaskModal();
-    this._setUndo("Task deleted", snapshot);
+    this._setUndo(task?.span_id ? "All-day task deleted" : "Task deleted", snapshot);
     await this._saveBoard();
   }
 
@@ -1617,6 +1770,13 @@ class HouseholdChoresCard extends HTMLElement {
       return;
     }
 
+    if (sourceTask.span_id) {
+      const spanGroup = this._taskSpanGroup(sourceTask);
+      spanGroup.forEach((task) => {
+        task.assignees = task.assignees.filter((id) => id !== personId);
+      });
+      return;
+    }
     sourceTask.assignees = sourceTask.assignees.filter((id) => id !== personId);
   }
 
@@ -1635,20 +1795,31 @@ class HouseholdChoresCard extends HTMLElement {
       return;
     }
 
+    if (targetTask.span_id) {
+      const spanGroup = this._taskSpanGroup(targetTask);
+      spanGroup.forEach((task) => {
+        if (!task.assignees.includes(personId)) task.assignees.push(personId);
+      });
+      return;
+    }
     if (!targetTask.assignees.includes(personId)) targetTask.assignees.push(personId);
   }
 
   _taskMetaLine(task) {
     if (task.fixed) return "";
     const bits = [];
+    if (task.span_id) bits.push("all-day");
     if (task.end_date) bits.push(`until ${task.end_date}`);
     return bits.length ? `<div class="task-sub">${this._escape(bits.join(" • "))}</div>` : "";
   }
 
   _renderTaskCard(task) {
-    const draggable = !task.virtual;
+    const draggable = !task.virtual && !task.span_id;
+    const spanClass = task.span_id
+      ? ` span-task ${task.span_index === 0 ? "span-start" : ""} ${task.span_index === task.span_total - 1 ? "span-end" : ""} ${task.span_index > 0 && task.span_index < task.span_total - 1 ? "span-mid" : ""}`
+      : "";
     return `
-      <article class="task ${task.virtual ? "virtual-task" : ""} ${task.fixed ? "fixed-task" : ""}" draggable="${draggable ? "true" : "false"}" data-task-id="${task.id}" data-template-id="${task.template_id || ""}" data-column="${task.column || ""}" data-virtual="${task.virtual ? "1" : "0"}">
+      <article class="task ${task.virtual ? "virtual-task" : ""} ${task.fixed ? "fixed-task" : ""}${spanClass}" draggable="${draggable ? "true" : "false"}" data-task-id="${task.id}" data-template-id="${task.template_id || ""}" data-column="${task.column || ""}" data-virtual="${task.virtual ? "1" : "0"}">
         <div class="task-head">
           <div class="task-title">${this._escape(task.title)}</div>
         </div>
@@ -1792,7 +1963,7 @@ class HouseholdChoresCard extends HTMLElement {
   _renderTaskModal() {
     if (!this._showTaskModal) return "";
     const form = this._taskForm;
-    const showWeekdayMode = form.fixed || form.weekdays.length > 0;
+    const showWeekdayMode = form.fixed || form.allDaySpan || form.weekdays.length > 0;
     return `
       <div class="modal-backdrop" id="task-backdrop">
         <div class="modal">
@@ -1806,6 +1977,7 @@ class HouseholdChoresCard extends HTMLElement {
               <label><input id="task-fixed" type="checkbox" ${form.fixed ? "checked" : ""} /> Fixed until date</label>
               <input id="task-end-date" type="date" value="${this._escape(form.endDate)}" />
             </div>
+            ${form.fixed ? "" : `<label class="settings-switch"><input id="task-all-day-span" type="checkbox" ${form.allDaySpan ? "checked" : ""} /><span>All-day across selected days</span></label>`}
             ${this._renderWeekdaySelector(form.weekdays)}
             ${showWeekdayMode ? "" : `<select id="task-column">${this._columns().map((c) => `<option value="${c.key}" ${form.column === c.key ? "selected" : ""}>${this._escape(this._labelForColumn(c.key))}</option>`).join("")}</select>`}
             <div class="assignees">
@@ -1815,7 +1987,7 @@ class HouseholdChoresCard extends HTMLElement {
                 )
                 .join("")}
             </div>
-            <div class="small">Without fixed: selected weekdays create one-off tasks for this week and do not require end date.</div>
+            <div class="small">Without fixed: selected weekdays create one-off tasks for this week. Enable All-day for a continuous multi-day block (e.g. course/travel).</div>
             ${form.mode === "edit" && form.templateId ? `<label class="delete-series"><input id="task-delete-series" type="checkbox" ${form.deleteSeries ? "checked" : ""} /> Delete entire fixed series</label><div class="small">Unchecked = delete only this week occurrence.</div>` : ""}
             ${form.mode === "add" ? `<div class="settings-inline"><button type="button" id="save-task-as-template" ${form.title.trim() ? "" : "disabled"}>Save title as quick template</button></div>` : ""}
             <div class="modal-actions">
@@ -2064,6 +2236,10 @@ class HouseholdChoresCard extends HTMLElement {
         .task{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:7px;cursor:grab;user-select:none}
         .task.virtual-task{cursor:default;opacity:.96}
         .task.fixed-task{background:#ecf3ff;border-color:#b7cdf3;box-shadow:inset 3px 0 0 #3b82f6}
+        .task.span-task{background:#eef2ff;border-color:#c7d2fe;box-shadow:inset 3px 0 0 #4f46e5;cursor:pointer}
+        .task.span-task.span-mid{border-left-color:#818cf8;border-right-color:#818cf8}
+        .task.span-task.span-start{border-left-width:2px}
+        .task.span-task.span-end{border-right-width:2px}
         .task.swipe-complete-preview{background:#dcfce7;border-color:#86efac;box-shadow:inset 3px 0 0 #16a34a}
         .task.swipe-delete-preview{background:#fee2e2;border-color:#fca5a5;box-shadow:inset 3px 0 0 #dc2626}
         .task-head{display:flex;align-items:flex-start;justify-content:space-between;gap:6px}
@@ -2254,6 +2430,7 @@ class HouseholdChoresCard extends HTMLElement {
     const taskColumnInput = this.shadowRoot.querySelector("#task-column");
     const taskEndDateInput = this.shadowRoot.querySelector("#task-end-date");
     const taskFixedInput = this.shadowRoot.querySelector("#task-fixed");
+    const taskAllDaySpanInput = this.shadowRoot.querySelector("#task-all-day-span");
     const taskDeleteSeriesInput = this.shadowRoot.querySelector("#task-delete-series");
     const saveTaskAsTemplateBtn = this.shadowRoot.querySelector("#save-task-as-template");
     const deleteTaskBtn = this.shadowRoot.querySelector("#delete-task");
@@ -2354,6 +2531,13 @@ class HouseholdChoresCard extends HTMLElement {
       taskFixedInput.addEventListener("change", (ev) => {
         const checked = Boolean(ev.target.checked);
         this._onTaskFieldInput("fixed", checked);
+        this._render();
+      });
+    }
+    if (taskAllDaySpanInput) {
+      taskAllDaySpanInput.addEventListener("change", (ev) => {
+        const checked = Boolean(ev.target.checked);
+        this._onTaskFieldInput("allDaySpan", checked);
         this._render();
       });
     }
