@@ -25,6 +25,7 @@ class HouseholdChoresCard extends HTMLElement {
     this._maxWeekOffset = 3;
     this._swipeStartX = null;
     this._taskFormOriginal = null;
+    this._taskFormDirty = false;
 
     this._taskForm = this._emptyTaskForm("add");
   }
@@ -439,6 +440,7 @@ class HouseholdChoresCard extends HTMLElement {
   _openAddTaskModal() {
     this._taskForm = this._emptyTaskForm("add");
     this._taskFormOriginal = this._cloneTaskForm(this._taskForm);
+    this._taskFormDirty = false;
     this._showTaskModal = true;
     this._render();
   }
@@ -453,6 +455,7 @@ class HouseholdChoresCard extends HTMLElement {
     }
     this._taskForm = next;
     this._taskFormOriginal = this._cloneTaskForm(this._taskForm);
+    this._taskFormDirty = false;
     this._showTaskModal = true;
     this._render();
   }
@@ -481,6 +484,7 @@ class HouseholdChoresCard extends HTMLElement {
     };
 
     this._taskFormOriginal = this._cloneTaskForm(this._taskForm);
+    this._taskFormDirty = false;
     this._showTaskModal = true;
     this._render();
   }
@@ -489,6 +493,7 @@ class HouseholdChoresCard extends HTMLElement {
     this._showTaskModal = false;
     this._taskForm = this._emptyTaskForm("add");
     this._taskFormOriginal = null;
+    this._taskFormDirty = false;
     this._render();
   }
 
@@ -558,6 +563,7 @@ class HouseholdChoresCard extends HTMLElement {
 
   _onTaskFieldInput(field, value) {
     this._taskForm = { ...this._taskForm, [field]: value };
+    this._recalcTaskFormDirty();
     this._updateSubmitButtons();
   }
 
@@ -585,6 +591,10 @@ class HouseholdChoresCard extends HTMLElement {
     return JSON.stringify(this._normalizedTaskForm(this._taskForm)) !== JSON.stringify(this._normalizedTaskForm(this._taskFormOriginal));
   }
 
+  _recalcTaskFormDirty() {
+    this._taskFormDirty = this._isTaskFormDirty();
+  }
+
   _canSubmitPersonForm() {
     return Boolean(this._newPersonName.trim());
   }
@@ -592,7 +602,7 @@ class HouseholdChoresCard extends HTMLElement {
   _canSubmitTaskForm() {
     if (this._saving) return false;
     if (!this._taskForm.title || !this._taskForm.title.trim()) return false;
-    if (this._taskForm.mode === "edit") return this._isTaskFormDirty();
+    if (this._taskForm.mode === "edit") return this._taskFormDirty;
     return true;
   }
 
@@ -636,6 +646,7 @@ class HouseholdChoresCard extends HTMLElement {
     if (set.has(personId)) set.delete(personId);
     else set.add(personId);
     this._taskForm = { ...this._taskForm, assignees: [...set] };
+    this._recalcTaskFormDirty();
     this._render();
   }
 
@@ -644,6 +655,7 @@ class HouseholdChoresCard extends HTMLElement {
     if (set.has(dayKey)) set.delete(dayKey);
     else set.add(dayKey);
     this._taskForm = { ...this._taskForm, weekdays: [...set] };
+    this._recalcTaskFormDirty();
     this._render();
   }
 
@@ -1063,6 +1075,8 @@ class HouseholdChoresCard extends HTMLElement {
         .people-strip-label{font-size:.78rem;font-weight:700;color:#334155;margin-right:2px}
         .people-strip-empty{font-size:.78rem;color:#64748b}
         button:disabled{background:#e2e8f0 !important;color:#64748b !important;border-color:#cbd5e1 !important;cursor:not-allowed;opacity:1}
+        #person-submit,#task-submit{background:#2563eb;color:#fff;border-color:#1d4ed8;font-weight:700}
+        #person-submit:not(:disabled):hover,#task-submit:not(:disabled):hover{background:#1d4ed8}
         .person-pill{display:flex;align-items:center;gap:6px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:3px 8px 3px 4px;font-size:.78rem;color:#334155}
         .chip-wrap{position:relative;display:inline-flex;align-items:center;justify-content:center}
         .person-delete{margin-left:auto;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:8px;padding:4px 8px;font-size:.72rem;cursor:pointer}

@@ -21,6 +21,8 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Assignee chips on tasks show role markers (`A` for Adult, `C` for Child)
 - `Add` / `Create` buttons stay disabled (grey) until title/name input is filled
 - `Save` stays disabled when opening an existing task, and only enables after a real change
+- Assignee changes in Edit task now correctly enable `Save`
+- Enabled submit buttons (`Add`, `Create`, `Save`) use blue styling for clearer state contrast
 - Modal input focus is preserved during card re-renders (typing no longer drops focus mid-edit)
 - Click any task to edit title/assignees/day/end date in modal
 - Delete task directly from the edit modal
