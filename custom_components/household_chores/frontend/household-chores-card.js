@@ -2245,8 +2245,9 @@ class HouseholdChoresCard extends HTMLElement {
           box-shadow:none;
           cursor:pointer;
           padding:4px 8px;
-          min-height:26px;
+          min-height:30px;
           gap:2px;
+          touch-action:pan-y;
         }
         .task.span-task .task-head{min-height:16px;align-items:center}
         .task.span-task .task-title{
