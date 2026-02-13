@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME, EVENT_STATE_CHANGED, SERVICE_RESTART, STATE_OFF, STATE_ON
+from homeassistant.const import CONF_NAME, EVENT_STATE_CHANGED, STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_change
 
@@ -126,7 +126,7 @@ def _ensure_auto_restart_watcher(hass: HomeAssistant, domain_data: dict[str, Any
             try:
                 await hass.services.async_call(
                     "homeassistant",
-                    SERVICE_RESTART,
+                    "restart",
                     {},
                     blocking=True,
                 )
