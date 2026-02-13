@@ -132,6 +132,7 @@ The screenshots below are updated with each UI/layout release.
 ## Notes
 
 - The custom card JavaScript is auto-registered by the integration at startup.
+- Repository includes icon/logo fallback files (`icon.png`, `logo.png`, `dark_icon.png`, `dark_logo.png`) for broader HACS/UI icon compatibility.
 - JS resource is auto versioned (`?v=<manifest version>`) to reduce browser cache issues after updates.
 - If you update from older versions, restart Home Assistant to reload websocket commands/resources.
 - Save operations now include a fallback service (`household_chores.save_board`) if websocket save command is unavailable in runtime.
