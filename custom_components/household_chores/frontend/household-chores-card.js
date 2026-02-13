@@ -67,7 +67,6 @@ class HouseholdChoresCard extends HTMLElement {
 
   _columns() {
     return [
-      { key: "backlog", label: "Backlog" },
       { key: "monday", label: "Mon" },
       { key: "tuesday", label: "Tue" },
       { key: "wednesday", label: "Wed" },
@@ -75,12 +74,12 @@ class HouseholdChoresCard extends HTMLElement {
       { key: "friday", label: "Fri" },
       { key: "saturday", label: "Sat" },
       { key: "sunday", label: "Sun" },
-      { key: "done", label: "Done" },
+      { key: "done", label: "Completed" },
     ];
   }
 
   _weekColumns() {
-    return this._columns().filter((col) => col.key !== "backlog" && col.key !== "done");
+    return this._columns().filter((col) => col.key !== "done");
   }
 
   _weekdayKeys() {
@@ -103,7 +102,7 @@ class HouseholdChoresCard extends HTMLElement {
       title: "",
       fixed: false,
       endDate: "",
-      column: "backlog",
+      column: "monday",
       weekdays: [],
       assignees: [],
       occurrenceDate: "",
@@ -117,8 +116,7 @@ class HouseholdChoresCard extends HTMLElement {
       theme: "light",
       compact_mode: false,
       labels: {
-        backlog: "Backlog",
-        done: "Done",
+        done: "Completed",
         monday: "Mon",
         tuesday: "Tue",
         wednesday: "Wed",
@@ -128,7 +126,6 @@ class HouseholdChoresCard extends HTMLElement {
         sunday: "Sun",
       },
       weekly_refresh: { weekday: 6, hour: 0, minute: 30 },
-      done_cleanup: { hour: 3, minute: 0 },
     };
   }
 
@@ -348,7 +345,7 @@ class HouseholdChoresCard extends HTMLElement {
       people: normalizedPeople,
       tasks: tasks
         .map((t, i) => {
-          const column = validColumns.includes(t.column) ? t.column : "backlog";
+          const column = validColumns.includes(t.column) ? t.column : "monday";
           const isWeekday = this._weekdayKeys().some((day) => day.key === column);
           return {
           id: String(t.id || `task_${i}`),
@@ -386,10 +383,6 @@ class HouseholdChoresCard extends HTMLElement {
         weekly_refresh: {
           ...this._defaultSettings().weekly_refresh,
           ...(settings.weekly_refresh || {}),
-        },
-        done_cleanup: {
-          ...this._defaultSettings().done_cleanup,
-          ...(settings.done_cleanup || {}),
         },
       },
       updated_at: String(board?.updated_at || ""),
@@ -787,7 +780,7 @@ class HouseholdChoresCard extends HTMLElement {
       title: task.title,
       fixed: Boolean(task.fixed),
       endDate: task.end_date || tpl?.end_date || "",
-      column: task.column || "backlog",
+      column: task.column || "monday",
       weekdays,
       assignees: nextAssignees,
       occurrenceDate,
@@ -800,7 +793,7 @@ class HouseholdChoresCard extends HTMLElement {
     this._render();
   }
 
-  _openEditTemplateModal(templateId, fallbackColumn = "backlog", weekStartIso = "") {
+  _openEditTemplateModal(templateId, fallbackColumn = "monday", weekStartIso = "") {
     const tpl = this._board.templates.find((item) => item.id === templateId);
     if (!tpl) return;
     const knownPersonIds = new Set(this._board.people.map((person) => person.id));
@@ -817,7 +810,7 @@ class HouseholdChoresCard extends HTMLElement {
       title: tpl.title || "",
       fixed: true,
       endDate: tpl.end_date || "",
-      column: fallbackColumn || "backlog",
+      column: fallbackColumn || "monday",
       weekdays: Array.isArray(tpl.weekdays) ? [...tpl.weekdays] : [],
       assignees,
       occurrenceDate,
@@ -1052,7 +1045,7 @@ class HouseholdChoresCard extends HTMLElement {
       title: (form.title || "").trim(),
       fixed: Boolean(form.fixed),
       endDate: form.endDate || "",
-      column: form.column || "backlog",
+      column: form.column || "monday",
       weekdays: [...(form.weekdays || [])].sort(),
       assignees: [...(form.assignees || [])].sort(),
       deleteSeries: Boolean(form.deleteSeries),
@@ -1443,7 +1436,7 @@ class HouseholdChoresCard extends HTMLElement {
 
   _renderColumn(column) {
     const tasks = this._tasksVisibleByFilter(this._tasksForColumn(column.key));
-    const isSideLane = column.key === "backlog" || column.key === "done";
+    const isSideLane = column.key === "done";
     const isWeekday = this._weekdayKeys().some((day) => day.key === column.key);
     const weekdayDate = isWeekday ? this._formatWeekdayDateCompact(column.key) : "";
     const emptyContent = `
@@ -1633,31 +1626,21 @@ class HouseholdChoresCard extends HTMLElement {
               </div>
             </section>
 
-            <section class="settings-section settings-grid two-col">
-              <div class="settings-block">
-                <h4>Weekly Reset</h4>
-                <div class="settings-inline">
-                  <select id="settings-weekday">
-                  <option value="0" ${String(form.weekly_refresh?.weekday) === "0" ? "selected" : ""}>Mon</option>
-                  <option value="1" ${String(form.weekly_refresh?.weekday) === "1" ? "selected" : ""}>Tue</option>
-                  <option value="2" ${String(form.weekly_refresh?.weekday) === "2" ? "selected" : ""}>Wed</option>
-                  <option value="3" ${String(form.weekly_refresh?.weekday) === "3" ? "selected" : ""}>Thu</option>
-                  <option value="4" ${String(form.weekly_refresh?.weekday) === "4" ? "selected" : ""}>Fri</option>
-                  <option value="5" ${String(form.weekly_refresh?.weekday) === "5" ? "selected" : ""}>Sat</option>
-                  <option value="6" ${String(form.weekly_refresh?.weekday) === "6" ? "selected" : ""}>Sun</option>
-                  </select>
-                  <input id="settings-refresh-hour" data-focus-key="settings-refresh-hour" type="number" min="0" max="23" value="${this._escape(form.weekly_refresh?.hour ?? 0)}" />
-                  <span>:</span>
-                  <input id="settings-refresh-minute" data-focus-key="settings-refresh-minute" type="number" min="0" max="59" value="${this._escape(form.weekly_refresh?.minute ?? 30)}" />
-                </div>
-              </div>
-              <div class="settings-block">
-                <h4>Done Cleanup</h4>
-                <div class="settings-inline">
-                  <input id="settings-cleanup-hour" data-focus-key="settings-cleanup-hour" type="number" min="0" max="23" value="${this._escape(form.done_cleanup?.hour ?? 3)}" />
-                  <span>:</span>
-                  <input id="settings-cleanup-minute" data-focus-key="settings-cleanup-minute" type="number" min="0" max="59" value="${this._escape(form.done_cleanup?.minute ?? 0)}" />
-                </div>
+            <section class="settings-section">
+              <h4>Weekly Reset</h4>
+              <div class="settings-inline">
+                <select id="settings-weekday">
+                <option value="0" ${String(form.weekly_refresh?.weekday) === "0" ? "selected" : ""}>Mon</option>
+                <option value="1" ${String(form.weekly_refresh?.weekday) === "1" ? "selected" : ""}>Tue</option>
+                <option value="2" ${String(form.weekly_refresh?.weekday) === "2" ? "selected" : ""}>Wed</option>
+                <option value="3" ${String(form.weekly_refresh?.weekday) === "3" ? "selected" : ""}>Thu</option>
+                <option value="4" ${String(form.weekly_refresh?.weekday) === "4" ? "selected" : ""}>Fri</option>
+                <option value="5" ${String(form.weekly_refresh?.weekday) === "5" ? "selected" : ""}>Sat</option>
+                <option value="6" ${String(form.weekly_refresh?.weekday) === "6" ? "selected" : ""}>Sun</option>
+                </select>
+                <input id="settings-refresh-hour" data-focus-key="settings-refresh-hour" type="number" min="0" max="23" value="${this._escape(form.weekly_refresh?.hour ?? 0)}" />
+                <span>:</span>
+                <input id="settings-refresh-minute" data-focus-key="settings-refresh-minute" type="number" min="0" max="59" value="${this._escape(form.weekly_refresh?.minute ?? 30)}" />
               </div>
             </section>
 
@@ -1669,8 +1652,8 @@ class HouseholdChoresCard extends HTMLElement {
                   <span class="schedule-value">${this._escape(this._weekdayNameFromIndex(form.weekly_refresh?.weekday))} ${this._escape(this._formatClock(form.weekly_refresh?.hour, form.weekly_refresh?.minute))}</span>
                 </div>
                 <div class="schedule-row">
-                  <span class="schedule-label">Done cleanup</span>
-                  <span class="schedule-value">Daily ${this._escape(this._formatClock(form.done_cleanup?.hour, form.done_cleanup?.minute))}</span>
+                  <span class="schedule-label">Completed cleanup</span>
+                  <span class="schedule-value">Weekly with board reset</span>
                 </div>
               </div>
             </section>
@@ -1758,7 +1741,7 @@ class HouseholdChoresCard extends HTMLElement {
         .columns-wrap{display:grid;gap:10px}
         .week-scroll{overflow-x:hidden}
         .week-columns{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;min-width:0}
-        .side-columns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+        .side-columns{display:grid;grid-template-columns:1fr;gap:8px}
         .column{background:var(--hc-card);border:1px solid var(--hc-border);border-radius:12px;padding:8px;display:grid;grid-template-rows:auto 1fr;min-height:220px}
         .week-columns .column.week-lane{min-height:${weekLaneHeight}px;max-height:${weekLaneHeight}px}
         .week-columns .column.week-lane .tasks{max-height:${weekTaskAreaHeight}px;overflow-y:auto;overflow-x:hidden;padding-right:2px}
@@ -1912,7 +1895,7 @@ class HouseholdChoresCard extends HTMLElement {
 
           <div class="columns-wrap">
             <div class="week-scroll"><div class="week-columns">${this._weekColumns().map((col) => this._renderColumn(col)).join("")}</div></div>
-            <div class="side-columns">${this._renderColumn({ key: "backlog", label: "Backlog" })}${this._renderColumn({ key: "done", label: "Done" })}</div>
+            <div class="side-columns">${this._renderColumn({ key: "done", label: "Completed" })}</div>
           </div>
         </div>
       </ha-card>
@@ -1942,8 +1925,6 @@ class HouseholdChoresCard extends HTMLElement {
     const settingsWeekday = this.shadowRoot.querySelector("#settings-weekday");
     const settingsRefreshHour = this.shadowRoot.querySelector("#settings-refresh-hour");
     const settingsRefreshMinute = this.shadowRoot.querySelector("#settings-refresh-minute");
-    const settingsCleanupHour = this.shadowRoot.querySelector("#settings-cleanup-hour");
-    const settingsCleanupMinute = this.shadowRoot.querySelector("#settings-cleanup-minute");
     const settingsExportJson = this.shadowRoot.querySelector("#settings-export-json");
     const settingsImportJson = this.shadowRoot.querySelector("#settings-import-json");
     const copyExportJsonBtn = this.shadowRoot.querySelector("#copy-export-json");
@@ -2003,8 +1984,6 @@ class HouseholdChoresCard extends HTMLElement {
     if (settingsWeekday) settingsWeekday.addEventListener("change", (ev) => this._onSettingsFieldInput(["weekly_refresh", "weekday"], Number(ev.target.value)));
     if (settingsRefreshHour) settingsRefreshHour.addEventListener("input", (ev) => this._onSettingsFieldInput(["weekly_refresh", "hour"], Number(ev.target.value)));
     if (settingsRefreshMinute) settingsRefreshMinute.addEventListener("input", (ev) => this._onSettingsFieldInput(["weekly_refresh", "minute"], Number(ev.target.value)));
-    if (settingsCleanupHour) settingsCleanupHour.addEventListener("input", (ev) => this._onSettingsFieldInput(["done_cleanup", "hour"], Number(ev.target.value)));
-    if (settingsCleanupMinute) settingsCleanupMinute.addEventListener("input", (ev) => this._onSettingsFieldInput(["done_cleanup", "minute"], Number(ev.target.value)));
     if (settingsImportJson) settingsImportJson.addEventListener("input", (ev) => this._onImportBoardInput(ev));
     if (copyExportJsonBtn) copyExportJsonBtn.addEventListener("click", async () => this._onCopyExportJson());
     if (importBoardJsonBtn) importBoardJsonBtn.addEventListener("click", async (ev) => this._onImportBoard(ev));
@@ -2059,7 +2038,7 @@ class HouseholdChoresCard extends HTMLElement {
       const isVirtual = taskEl.dataset.virtual === "1";
       const taskId = taskEl.dataset.taskId;
       const templateId = taskEl.dataset.templateId || "";
-      const taskColumn = taskEl.dataset.column || "backlog";
+      const taskColumn = taskEl.dataset.column || "monday";
       if (!this._isReadOnlyWeekView() && !isVirtual) {
         taskEl.addEventListener("dragstart", (ev) => {
           this._draggingTask = true;

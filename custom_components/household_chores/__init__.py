@@ -199,17 +199,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     domain_data[entry.entry_id] = coordinator
 
-    async def _async_cleanup_done_tasks(now) -> None:
-        settings = await board_store.async_settings()
-        cleanup = settings.get("done_cleanup", {})
-        cleanup_hour = _as_int(cleanup.get("hour"), 3)
-        cleanup_minute = _as_int(cleanup.get("minute"), 0)
-        if now.hour != cleanup_hour or now.minute != cleanup_minute:
-            return
-        removed = await board_store.async_remove_done_tasks()
-        if removed:
-            _LOGGER.info("Nightly cleanup removed %s done tasks for entry %s", removed, entry.entry_id)
-
     async def _async_weekly_refresh(now) -> None:
         settings = await board_store.async_settings()
         weekly = settings.get("weekly_refresh", {})
@@ -223,17 +212,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         refreshed = await board_store.async_weekly_refresh()
         _LOGGER.info("Weekly refresh rebuilt %s tasks for entry %s", refreshed, entry.entry_id)
 
-    cleanup_unsub = async_track_time_change(
-        hass,
-        _async_cleanup_done_tasks,
-        second=0,
-    )
     weekly_unsub = async_track_time_change(
         hass,
         _async_weekly_refresh,
         second=0,
     )
-    domain_data["entry_unsubs"][entry.entry_id] = [cleanup_unsub, weekly_unsub]
+    domain_data["entry_unsubs"][entry.entry_id] = [weekly_unsub]
 
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 

@@ -7,24 +7,23 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Main week row: Monday to Sunday
 - Weekday columns are compressed to fit screen width (no horizontal week scroll)
 - Week navigation with ISO week number (`Week XX`) and swipe/arrow browsing from current week up to +3 weeks
-- All lanes (`Mon..Sun`, `Backlog`, `Done`) are week-bound and follow the selected week together
-- Secondary row: Backlog + Done in a 2-column grid below the week
-- On compact/mobile screens, Backlog/Done tasks switch to a responsive card grid (no forced overflow cards)
+- All lanes (`Mon..Sun`, `Completed`) are week-bound and follow the selected week together
+- Secondary row: single full-width `Completed` lane below the week
+- On compact/mobile screens, `Completed` tasks switch to a responsive card grid (no forced overflow cards)
 - Header is simplified: week navigator + people strip (tap people strip to manage household members)
 - Active person filter is shown as a compact chip near week controls (tap chip to clear quickly)
 - Settings gear in header opens board-level configuration modal
-- Backlog/Done lanes are intentionally shorter (about 2 task rows viewport)
+- `Completed` lane is intentionally compact for tablet overview
 - Each lane card acts as a hidden quick-add area:
-  - tap/click whitespace in `Mon..Sun`, `Backlog`, or `Done` to open Add task prefilled for that lane
+  - tap/click whitespace in `Mon..Sun` or `Completed` to open Add task prefilled for that lane
   - tap/click on a task still opens edit/delete for that task
 - Future week views use the same interaction model as current week (`Drop here`, click whitespace to add)
 - Settings modal includes:
   - board title
   - compact mode (denser tablet layout)
-  - labels for weekdays + backlog + done
+  - labels for weekdays + completed
   - weekly reset day/time
-  - done cleanup time
-  - live automation summary (`Weekly reset: <day hh:mm>`, `Done cleanup: Daily <hh:mm>`)
+  - live automation summary (`Weekly reset: <day hh:mm>`, `Completed cleanup: Weekly with board reset`)
   - theme presets (`light`, `dark`, `colorful`)
 - Compact mode preference is persisted in board settings and survives refresh/reload.
 - Settings modal input focus is preserved while typing (no cursor drop on rerender)
@@ -42,7 +41,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Fixed recurring tasks shown in future weeks are now editable/deletable via template modal
 - Fixed task cards use a subtle blue visual style for quick recognition
 - Deleting a fixed task defaults to this-week occurrence only; modal checkbox allows deleting full fixed series
-- Backlog/Done lanes default to a compact single-row height on tablet/desktop
+- Completed lane defaults to a compact single-row height on tablet/desktop
 - Weekday card headers are minimalist: `Day + task counter` with date shown on the next line
 - `Add` / `Create` buttons stay disabled (grey) until title/name input is filled
 - `Save` stays disabled when opening an existing task, and only enables after a real change
@@ -58,9 +57,9 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Optional fixed recurring tasks with:
   - end date
   - weekday selection (`M T W T F S S`)
-- Weekday selection is always available in task modal; selecting weekdays hides single-column (`Backlog/day`) selector
+- Weekday selection is always available in task modal; selecting weekdays hides single-column selector
 - Without `Fixed until date`, selected weekdays create one-off tasks for this week and do not require end date
-- Drag-and-drop tasks between backlog, weekdays, and done
+- Drag-and-drop tasks between weekdays and completed
 - Persistent board data stored in Home Assistant (`.storage`)
 
 ## Install (HACS)
@@ -128,11 +127,10 @@ The screenshots below are updated with each UI/layout release.
 - Integration auto-restarts Home Assistant shortly after `Household Chores update` is installed (matches entity_id and update state transitions robustly).
 - Default chores/members entered during integration setup are used as starter board data.
 - The card layout is optimized for tablet-sized dashboards (including iPad-width screens).
-- Tasks moved to `Done` are automatically deleted nightly at `03:00` (Home Assistant local time).
 - Weekly board refresh time is configurable in integration options (`day`, `hour`, `minute`).
 - On weekly refresh:
   - each task has an internal locked `week_number` + `week_start` (not shown in UI)
-  - `Done` tasks are removed by nightly cleanup (`03:00`)
+  - `Completed` tasks are removed by weekly board reset
   - only past week weekday tasks are cleared (the week you leave)
   - future week tasks are kept
   - expired tasks (`end_date` < today) are removed

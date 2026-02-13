@@ -24,7 +24,7 @@ WEEKDAY_COLUMNS = [
 ]
 WEEKDAY_INDEX = {column: index for index, column in enumerate(WEEKDAY_COLUMNS)}
 
-ALL_COLUMNS = ["backlog", *WEEKDAY_COLUMNS, "done"]
+ALL_COLUMNS = [*WEEKDAY_COLUMNS, "done"]
 DEFAULT_COLORS = [
     "#E11D48",
     "#2563EB",
@@ -184,7 +184,9 @@ class HouseholdBoardStore:
 
         kept_tasks: list[dict[str, Any]] = []
         for task in board.get("tasks", []):
-            column = str(task.get("column") or "backlog")
+            column = str(task.get("column") or "monday").lower()
+            if column == "backlog":
+                column = "monday"
             task_week_number_raw = task.get("week_number")
             task_week_number = int(task_week_number_raw) if isinstance(task_week_number_raw, int) else None
             if column == "done":
@@ -305,8 +307,7 @@ class HouseholdBoardStore:
             "theme": "light",
             "compact_mode": False,
             "labels": {
-                "backlog": "Backlog",
-                "done": "Done",
+                "done": "Completed",
                 "monday": "Mon",
                 "tuesday": "Tue",
                 "wednesday": "Wed",
@@ -319,10 +320,6 @@ class HouseholdBoardStore:
                 "weekday": int(self._refresh_weekday),
                 "hour": int(self._refresh_hour),
                 "minute": int(self._refresh_minute),
-            },
-            "done_cleanup": {
-                "hour": int(self._cleanup_hour),
-                "minute": int(self._cleanup_minute),
             },
         }
 
@@ -393,9 +390,11 @@ class HouseholdBoardStore:
             if not title:
                 continue
 
-            column = str(task.get("column") or "backlog").lower()
+            column = str(task.get("column") or "monday").lower()
+            if column == "backlog":
+                column = "monday"
             if column not in ALL_COLUMNS:
-                column = "backlog"
+                column = "monday"
 
             task_id = str(task.get("id") or f"task_{uuid4().hex[:12]}")
             assignees_raw = task.get("assignees", [])
@@ -449,7 +448,6 @@ class HouseholdBoardStore:
         }
 
         weekly_raw = raw_settings.get("weekly_refresh", {}) if isinstance(raw_settings, dict) else {}
-        done_raw = raw_settings.get("done_cleanup", {}) if isinstance(raw_settings, dict) else {}
 
         settings = {
             "title": str(raw_settings.get("title") or default_settings["title"]).strip() or default_settings["title"],
@@ -460,10 +458,6 @@ class HouseholdBoardStore:
                 "weekday": max(0, min(6, _safe_int(weekly_raw.get("weekday"), default_settings["weekly_refresh"]["weekday"]))),
                 "hour": max(0, min(23, _safe_int(weekly_raw.get("hour"), default_settings["weekly_refresh"]["hour"]))),
                 "minute": max(0, min(59, _safe_int(weekly_raw.get("minute"), default_settings["weekly_refresh"]["minute"]))),
-            },
-            "done_cleanup": {
-                "hour": max(0, min(23, _safe_int(done_raw.get("hour"), default_settings["done_cleanup"]["hour"]))),
-                "minute": max(0, min(59, _safe_int(done_raw.get("minute"), default_settings["done_cleanup"]["minute"]))),
             },
         }
         if settings["theme"] not in {"light", "dark", "colorful"}:
