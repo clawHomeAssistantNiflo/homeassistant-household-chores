@@ -2098,7 +2098,14 @@ class HouseholdChoresCard extends HTMLElement {
         <span class="upcoming-label">Upcoming</span>
         ${items
           .slice(0, 8)
-          .map((item) => `<span class="upcoming-pill"><strong>${this._escape(this._labelForColumn(item.dayKey))}</strong><span>${this._escape(item.task.title)}</span></span>`)
+          .map((item) => {
+            const dots = (item.task.assignees || [])
+              .map((personId) => this._board.people.find((person) => person.id === personId))
+              .filter(Boolean)
+              .map((person) => `<span class="upcoming-dot" style="background:${person.color}" title="${this._escape(person.name)}"></span>`)
+              .join("");
+            return `<span class="upcoming-pill"><strong>${this._escape(this._labelForColumn(item.dayKey))}</strong><span>${this._escape(item.task.title)}</span>${dots ? `<span class="upcoming-dots">${dots}</span>` : ""}</span>`;
+          })
           .join("")}
       </div>
     `;
@@ -2380,6 +2387,8 @@ class HouseholdChoresCard extends HTMLElement {
         .upcoming-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#64748b}
         .upcoming-pill{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #dbe3ef;border-radius:999px;padding:3px 8px;font-size:.75rem;color:#334155;max-height:26px}
         .upcoming-pill strong{font-size:.72rem;color:#475569}
+        .upcoming-dots{display:inline-flex;align-items:center;gap:3px;margin-left:2px}
+        .upcoming-dot{width:8px;height:8px;border-radius:999px;display:inline-block;box-shadow:inset 0 -1px 0 rgba(0,0,0,.15)}
         .quick-templates{margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
         .quick-label{font-size:.72rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
         .quick-template-btn{height:28px;padding:0 10px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:.74rem}
