@@ -1398,7 +1398,7 @@ class HouseholdChoresCard extends HTMLElement {
     return `
       <article class="task ${task.virtual ? "virtual-task" : ""} ${task.fixed ? "fixed-task" : ""}" draggable="${draggable ? "true" : "false"}" data-task-id="${task.id}" data-template-id="${task.template_id || ""}" data-column="${task.column || ""}" data-virtual="${task.virtual ? "1" : "0"}">
         <div class="task-head">
-          <div class="task-title">${task.fixed ? '<span class="fixed-badge">FX</span>' : ""}${this._escape(task.title)}</div>
+          <div class="task-title">${this._escape(task.title)}</div>
         </div>
         ${this._taskMetaLine(task)}
         <div class="task-meta">${this._assigneeChips(task)}</div>
@@ -1690,10 +1690,9 @@ class HouseholdChoresCard extends HTMLElement {
         .tasks{display:grid;gap:6px;align-content:start}
         .task{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:7px;cursor:grab;user-select:none}
         .task.virtual-task{cursor:default;opacity:.96}
-        .task.fixed-task{background:#dce6f5;border-color:#9fb4d3}
+        .task.fixed-task{background:#ecf3ff;border-color:#b7cdf3;box-shadow:inset 3px 0 0 #3b82f6}
         .task-head{display:flex;align-items:flex-start;justify-content:space-between;gap:6px}
         .task-title{font-size:.78rem;font-weight:600;line-height:1.25}
-        .fixed-badge{display:inline-flex;align-items:center;justify-content:center;padding:1px 6px;margin-right:6px;border-radius:999px;background:#1e3a8a;color:#fff;font-size:.62rem;font-weight:800;letter-spacing:.02em;vertical-align:middle}
         .task-sub{margin-top:4px;color:#64748b;font-size:.73rem}
         .task-meta{margin-top:6px;display:flex;gap:4px;flex-wrap:wrap}
         .empty-wrap{display:grid;gap:6px;align-content:start}

@@ -35,7 +35,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Data backup tools in settings: export JSON + import JSON restore
 - Multi-device save conflict hardening (`updated_at` guard + automatic merge-retry on client)
 - Fixed recurring tasks shown in future weeks are now editable/deletable via template modal
-- Fixed task cards use a stronger visual style and an `FX` badge
+- Fixed task cards use a subtle blue visual style for quick recognition
 - Deleting a fixed task defaults to this-week occurrence only; modal checkbox allows deleting full fixed series
 - Backlog/Done lanes default to a compact single-row height on tablet/desktop
 - `Add` / `Create` buttons stay disabled (grey) until title/name input is filled
