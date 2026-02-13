@@ -132,6 +132,7 @@ class HouseholdChoresCard extends HTMLElement {
       weekly_refresh: { weekday: 6, hour: 0, minute: 30 },
       quick_templates: [],
       gestures: { swipe_complete: true, swipe_delete: false },
+      onboarding_dismissed: false,
     };
   }
 
@@ -403,6 +404,7 @@ class HouseholdChoresCard extends HTMLElement {
           ...this._defaultSettings().gestures,
           ...(settings.gestures || {}),
         },
+        onboarding_dismissed: Boolean(settings.onboarding_dismissed),
       },
       updated_at: String(board?.updated_at || ""),
     };
@@ -971,9 +973,13 @@ class HouseholdChoresCard extends HTMLElement {
     await this._saveBoard();
   }
 
-  async _quickDeleteTask(taskId) {
+  async _quickDeleteTask(taskId, { viaSwipe = false } = {}) {
     const task = this._board.tasks.find((item) => item.id === taskId);
     if (!task || task.virtual) return;
+    if (viaSwipe && (task.fixed || task.template_id)) {
+      const ok = window.confirm("Delete this fixed occurrence only? Use edit modal to delete full series.");
+      if (!ok) return;
+    }
     const snapshot = this._snapshotBoard();
     const templateId = task.template_id || "";
     if (templateId) {
@@ -994,6 +1000,15 @@ class HouseholdChoresCard extends HTMLElement {
     }
     this._reindexAllColumns();
     this._setUndo("Task deleted", snapshot);
+    this._render();
+    await this._saveBoard();
+  }
+
+  async _dismissOnboardingTips() {
+    if (this._board?.settings?.onboarding_dismissed) return;
+    const nextSettings = JSON.parse(JSON.stringify(this._board.settings || this._defaultSettings()));
+    nextSettings.onboarding_dismissed = true;
+    this._board.settings = nextSettings;
     this._render();
     await this._saveBoard();
   }
@@ -1066,7 +1081,7 @@ class HouseholdChoresCard extends HTMLElement {
       await this._quickMoveTaskToCompleted(swipe.taskId);
     } else if (dx < -70 && Math.abs(dx) > Math.abs(dy) && swipe.taskId && deleteEnabled) {
       this._suppressTaskClickUntil = Date.now() + 500;
-      await this._quickDeleteTask(swipe.taskId);
+      await this._quickDeleteTask(swipe.taskId, { viaSwipe: true });
     }
   }
 
@@ -1082,6 +1097,7 @@ class HouseholdChoresCard extends HTMLElement {
       swipe_complete: Boolean(next.gestures?.swipe_complete ?? true),
       swipe_delete: Boolean(next.gestures?.swipe_delete ?? false),
     };
+    next.onboarding_dismissed = Boolean(next.onboarding_dismissed);
     this._board.settings = next;
     this._showSettingsModal = false;
     this._render();
@@ -1648,9 +1664,11 @@ class HouseholdChoresCard extends HTMLElement {
     const isWeekday = this._weekdayKeys().some((day) => day.key === column.key);
     const isTodayColumn = isWeekday && this._weekOffset === 0 && column.key === this._todayWeekdayKey();
     const weekdayDate = isWeekday ? this._formatWeekdayDateCompact(column.key) : "";
+    const emptyTitle = isWeekday ? "Tap to add" : "Drop completed";
+    const emptySub = isWeekday ? "Drop here or swipe tasks" : "Tap to add or drop task";
     const emptyContent = `
       <div class="empty-wrap ${isSideLane ? "side-empty" : "week-empty"}">
-        <div class="empty">Drop here</div>
+        <div class="empty"><div class="empty-title">${emptyTitle}</div><div class="empty-sub">${emptySub}</div></div>
       </div>
     `;
     return `
@@ -1745,6 +1763,18 @@ class HouseholdChoresCard extends HTMLElement {
       <div class="quick-templates" aria-label="Quick templates">
         <span class="quick-label">Quick add</span>
         ${templates.map((name) => `<button type="button" class="quick-template-btn" data-quick-template="${this._escape(name)}">${this._escape(name)}</button>`).join("")}
+      </div>
+    `;
+  }
+
+  _renderOnboardingBanner() {
+    if (this._board?.settings?.onboarding_dismissed) return "";
+    const gestures = this._board?.settings?.gestures || {};
+    const deleteHint = gestures.swipe_delete ? "Swipe left to delete." : "Swipe left delete is off (can be enabled in Settings).";
+    return `
+      <div class="onboarding-tip" role="note">
+        <span>Tip: tap empty day space to add tasks, swipe right to complete. ${this._escape(deleteHint)}</span>
+        <button type="button" id="dismiss-onboarding" title="Dismiss tips">x</button>
       </div>
     `;
   }
@@ -1885,6 +1915,10 @@ class HouseholdChoresCard extends HTMLElement {
                 <input id="settings-swipe-delete" type="checkbox" ${form.gestures?.swipe_delete ? "checked" : ""} />
                 <span>Swipe left to Delete</span>
               </label>
+              <label class="settings-switch">
+                <input id="settings-show-onboarding" type="checkbox" ${form.onboarding_dismissed ? "" : "checked"} />
+                <span>Show onboarding tips</span>
+              </label>
             </section>
 
             <section class="settings-section">
@@ -1993,6 +2027,8 @@ class HouseholdChoresCard extends HTMLElement {
         .quick-templates{margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
         .quick-label{font-size:.72rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
         .quick-template-btn{height:28px;padding:0 10px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:.74rem}
+        .onboarding-tip{margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:8px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:10px;padding:7px 9px;font-size:.76rem}
+        .onboarding-tip button{height:24px;min-width:24px;padding:0;border-radius:999px;border:1px solid #93c5fd;background:#dbeafe;color:#1e40af}
         button:disabled{background:#e2e8f0 !important;color:#64748b !important;border-color:#cbd5e1 !important;cursor:not-allowed;opacity:1}
         #person-submit,#task-submit{background:#2563eb;color:#fff;border-color:#1d4ed8;font-weight:700}
         #person-submit:not(:disabled):hover,#task-submit:not(:disabled):hover{background:#1d4ed8}
@@ -2050,6 +2086,8 @@ class HouseholdChoresCard extends HTMLElement {
         .week-empty{grid-template-columns:1fr}
         .side-empty{grid-template-columns:1fr}
         .empty{border:1px dashed #cbd5e1;border-radius:9px;padding:10px 8px;color:#94a3b8;text-align:center;font-size:.77rem}
+        .empty-title{font-size:.75rem;color:#64748b;font-weight:700}
+        .empty-sub{font-size:.67rem;color:#94a3b8;margin-top:2px}
         .empty-mini{color:#94a3b8;font-size:.8rem}
         .loading{color:var(--hc-muted);font-size:.85rem}
         .error{color:#b91c1c;font-size:.85rem;background:#fee2e2;border:1px solid #fecaca;padding:8px;border-radius:8px}
@@ -2156,6 +2194,7 @@ class HouseholdChoresCard extends HTMLElement {
                 <button class="week-nav-btn" type="button" id="open-settings">⚙</button>
               </div>
             </div>
+            ${this._renderOnboardingBanner()}
             <div class="people-strip" id="open-people" role="button" tabindex="0" aria-label="Open people">
               <span class="people-strip-label">People</span>
               ${
@@ -2199,6 +2238,7 @@ class HouseholdChoresCard extends HTMLElement {
     const settingsTitle = this.shadowRoot.querySelector("#settings-title");
     const settingsTheme = this.shadowRoot.querySelector("#settings-theme");
     const settingsCompactMode = this.shadowRoot.querySelector("#settings-compact-mode");
+    const settingsShowOnboarding = this.shadowRoot.querySelector("#settings-show-onboarding");
     const settingsWeekday = this.shadowRoot.querySelector("#settings-weekday");
     const settingsRefreshHour = this.shadowRoot.querySelector("#settings-refresh-hour");
     const settingsRefreshMinute = this.shadowRoot.querySelector("#settings-refresh-minute");
@@ -2224,6 +2264,7 @@ class HouseholdChoresCard extends HTMLElement {
     const focusFilterButtons = this.shadowRoot.querySelectorAll("[data-focus-filter]");
     const personFocusSelect = this.shadowRoot.querySelector("#person-focus-select");
     const clearFilterBtn = this.shadowRoot.querySelector("#clear-filter");
+    const dismissOnboardingBtn = this.shadowRoot.querySelector("#dismiss-onboarding");
     const quickTemplateButtons = this.shadowRoot.querySelectorAll("[data-quick-template]");
     const undoActionBtn = this.shadowRoot.querySelector("#undo-action-btn");
     const settingsQuickTemplateInput = this.shadowRoot.querySelector("#settings-quick-template-input");
@@ -2264,6 +2305,7 @@ class HouseholdChoresCard extends HTMLElement {
       this._setPersonFilter("all");
       this._render();
     });
+    if (dismissOnboardingBtn) dismissOnboardingBtn.addEventListener("click", async () => this._dismissOnboardingTips());
     quickTemplateButtons.forEach((btn) => {
       btn.addEventListener("click", () => this._openAddTaskFromQuickTemplate(btn.dataset.quickTemplate || ""));
     });
@@ -2285,6 +2327,7 @@ class HouseholdChoresCard extends HTMLElement {
     if (settingsTitle) settingsTitle.addEventListener("input", (ev) => this._onSettingsFieldInput(["title"], ev.target.value));
     if (settingsTheme) settingsTheme.addEventListener("change", (ev) => this._onSettingsFieldInput(["theme"], ev.target.value));
     if (settingsCompactMode) settingsCompactMode.addEventListener("change", (ev) => this._onSettingsFieldInput(["compact_mode"], ev.target.checked));
+    if (settingsShowOnboarding) settingsShowOnboarding.addEventListener("change", (ev) => this._onSettingsFieldInput(["onboarding_dismissed"], !ev.target.checked));
     if (settingsWeekday) settingsWeekday.addEventListener("change", (ev) => this._onSettingsFieldInput(["weekly_refresh", "weekday"], Number(ev.target.value)));
     if (settingsRefreshHour) settingsRefreshHour.addEventListener("input", (ev) => this._onSettingsFieldInput(["weekly_refresh", "hour"], Number(ev.target.value)));
     if (settingsRefreshMinute) settingsRefreshMinute.addEventListener("input", (ev) => this._onSettingsFieldInput(["weekly_refresh", "minute"], Number(ev.target.value)));

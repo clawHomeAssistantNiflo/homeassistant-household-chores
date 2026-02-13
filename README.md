@@ -27,6 +27,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
   - labels for weekdays + completed
   - quick template library (add/remove reusable task titles)
   - gesture controls (`Swipe right -> Completed`, optional `Swipe left -> Delete`)
+  - onboarding toggle (`Show onboarding tips`)
   - weekly reset day/time
   - live automation summary (`Weekly reset: <day hh:mm>`, `Completed cleanup: Weekly with board reset`)
   - theme presets (`light`, `dark`, `colorful`)
@@ -58,6 +59,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Swipe right on a task card to instantly move it to `Completed` (tablet gesture)
 - Optional swipe left delete (disabled by default for safety; can be enabled in settings)
 - Gesture preview colors: green while swiping toward `Completed`, red while swiping toward `Delete`
+- Swipe-delete guard: fixed tasks require confirmation when deleted via swipe
 - Delete task directly from the edit modal
 - Drag people badges directly onto tasks to assign quickly
 - Full person names are shown in the top People row
@@ -70,6 +72,8 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Without `Fixed until date`, selected weekdays create one-off tasks for this week and do not require end date
 - Drag-and-drop tasks between weekdays and completed
 - Quick template bar under People lets you open prefilled task creation in one tap
+- Day/Completed empty states include clearer microcopy (`Tap to add`, swipe/drop hints)
+- First-run onboarding tip banner can be dismissed and is persisted across reloads/devices
 - Persistent board data stored in Home Assistant (`.storage`)
 
 ## Install (HACS)

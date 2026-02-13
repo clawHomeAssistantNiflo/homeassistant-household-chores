@@ -326,6 +326,7 @@ class HouseholdBoardStore:
                 "swipe_complete": True,
                 "swipe_delete": False,
             },
+            "onboarding_dismissed": False,
         }
 
     def _normalize_board(self, board: dict[str, Any]) -> dict[str, Any]:
@@ -476,6 +477,7 @@ class HouseholdBoardStore:
                 "swipe_complete": bool(gestures_raw.get("swipe_complete", default_settings["gestures"]["swipe_complete"])),
                 "swipe_delete": bool(gestures_raw.get("swipe_delete", default_settings["gestures"]["swipe_delete"])),
             },
+            "onboarding_dismissed": bool(raw_settings.get("onboarding_dismissed", default_settings["onboarding_dismissed"])),
         }
         if settings["theme"] not in {"light", "dark", "colorful"}:
             settings["theme"] = default_settings["theme"]
