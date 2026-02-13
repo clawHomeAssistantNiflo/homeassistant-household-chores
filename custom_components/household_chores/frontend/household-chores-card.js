@@ -1015,6 +1015,7 @@ class HouseholdChoresCard extends HTMLElement {
     if (!ev.touches || ev.touches.length !== 1) return;
     const isVirtual = taskEl.dataset.virtual === "1";
     if (isVirtual) return;
+    taskEl.classList.remove("swipe-complete-preview", "swipe-delete-preview");
     this._taskSwipe = {
       taskId: taskEl.dataset.taskId || "",
       startX: ev.touches[0].clientX,
@@ -1028,6 +1029,13 @@ class HouseholdChoresCard extends HTMLElement {
     if (!this._taskSwipe?.active || !ev.touches || ev.touches.length !== 1) return;
     const dx = ev.touches[0].clientX - this._taskSwipe.startX;
     const dy = ev.touches[0].clientY - this._taskSwipe.startY;
+    const gestures = this._board?.settings?.gestures || {};
+    const completeEnabled = gestures.swipe_complete !== false;
+    const deleteEnabled = Boolean(gestures.swipe_delete);
+    const completeReady = completeEnabled && dx > 54 && Math.abs(dx) > Math.abs(dy);
+    const deleteReady = deleteEnabled && dx < -54 && Math.abs(dx) > Math.abs(dy);
+    taskEl.classList.toggle("swipe-complete-preview", completeReady);
+    taskEl.classList.toggle("swipe-delete-preview", deleteReady);
     if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
     this._taskSwipe.moved = true;
     if (Math.abs(dx) > Math.abs(dy)) {
@@ -1044,6 +1052,7 @@ class HouseholdChoresCard extends HTMLElement {
     this._taskSwipe = null;
     taskEl.style.transform = "";
     taskEl.style.transition = "";
+    taskEl.classList.remove("swipe-complete-preview", "swipe-delete-preview");
     if (!ev.changedTouches || !ev.changedTouches.length) return;
     const endX = ev.changedTouches[0].clientX;
     const endY = ev.changedTouches[0].clientY;
@@ -2019,6 +2028,8 @@ class HouseholdChoresCard extends HTMLElement {
         .task{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:7px;cursor:grab;user-select:none}
         .task.virtual-task{cursor:default;opacity:.96}
         .task.fixed-task{background:#ecf3ff;border-color:#b7cdf3;box-shadow:inset 3px 0 0 #3b82f6}
+        .task.swipe-complete-preview{background:#dcfce7;border-color:#86efac;box-shadow:inset 3px 0 0 #16a34a}
+        .task.swipe-delete-preview{background:#fee2e2;border-color:#fca5a5;box-shadow:inset 3px 0 0 #dc2626}
         .task-head{display:flex;align-items:flex-start;justify-content:space-between;gap:6px}
         .task-title{
           font-size:.78rem;
@@ -2367,6 +2378,12 @@ class HouseholdChoresCard extends HTMLElement {
       taskEl.addEventListener("touchstart", (ev) => this._onTaskTouchStart(taskEl, ev), { passive: true });
       taskEl.addEventListener("touchmove", (ev) => this._onTaskTouchMove(taskEl, ev), { passive: false });
       taskEl.addEventListener("touchend", (ev) => this._onTaskTouchEnd(taskEl, ev), { passive: true });
+      taskEl.addEventListener("touchcancel", () => {
+        taskEl.style.transform = "";
+        taskEl.style.transition = "";
+        taskEl.classList.remove("swipe-complete-preview", "swipe-delete-preview");
+        this._taskSwipe = null;
+      }, { passive: true });
 
       taskEl.addEventListener("dragover", (ev) => {
         if (ev.dataTransfer.types.includes("text/person")) ev.preventDefault();

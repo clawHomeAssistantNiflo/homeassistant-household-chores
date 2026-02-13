@@ -57,6 +57,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Click any task to edit title/assignees/day/end date in modal
 - Swipe right on a task card to instantly move it to `Completed` (tablet gesture)
 - Optional swipe left delete (disabled by default for safety; can be enabled in settings)
+- Gesture preview colors: green while swiping toward `Completed`, red while swiping toward `Delete`
 - Delete task directly from the edit modal
 - Drag people badges directly onto tasks to assign quickly
 - Full person names are shown in the top People row
