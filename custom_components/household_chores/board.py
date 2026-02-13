@@ -303,6 +303,7 @@ class HouseholdBoardStore:
         return {
             "title": "Household Chores",
             "theme": "light",
+            "compact_mode": False,
             "labels": {
                 "backlog": "Backlog",
                 "done": "Done",
@@ -453,6 +454,7 @@ class HouseholdBoardStore:
         settings = {
             "title": str(raw_settings.get("title") or default_settings["title"]).strip() or default_settings["title"],
             "theme": str(raw_settings.get("theme") or default_settings["theme"]).lower(),
+            "compact_mode": bool(raw_settings.get("compact_mode", default_settings["compact_mode"])),
             "labels": labels,
             "weekly_refresh": {
                 "weekday": max(0, min(6, _safe_int(weekly_raw.get("weekday"), default_settings["weekly_refresh"]["weekday"]))),

@@ -26,6 +26,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
   - done cleanup time
   - live automation summary (`Weekly reset: <day hh:mm>`, `Done cleanup: Daily <hh:mm>`)
   - theme presets (`light`, `dark`, `colorful`)
+- Compact mode preference is persisted in board settings and survives refresh/reload.
 - Settings modal input focus is preserved while typing (no cursor drop on rerender)
 - Settings UI is redesigned with compact grouped sections and collapsible advanced data tools
 - People with unique colored circular badges and first-letter initials
