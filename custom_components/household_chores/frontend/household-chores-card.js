@@ -566,8 +566,25 @@ class HouseholdChoresCard extends HTMLElement {
   _openEditTaskModal(taskId) {
     const task = this._board.tasks.find((t) => t.id === taskId);
     if (!task) return;
+    const knownPersonIds = new Set(this._board.people.map((person) => person.id));
 
     const tpl = task.template_id ? this._board.templates.find((x) => x.id === task.template_id) : null;
+    const sanitizedTaskAssignees = Array.isArray(task.assignees) ? task.assignees.filter((id) => knownPersonIds.has(id)) : [];
+    const sanitizedTplAssignees = tpl && Array.isArray(tpl.assignees) ? tpl.assignees.filter((id) => knownPersonIds.has(id)) : [];
+    const nextAssignees = tpl ? [...sanitizedTplAssignees] : [...sanitizedTaskAssignees];
+
+    if (Array.isArray(task.assignees) && task.assignees.length !== sanitizedTaskAssignees.length) {
+      task.assignees = [...sanitizedTaskAssignees];
+      if (task.template_id) {
+        this._board.tasks.forEach((item) => {
+          if (item.template_id === task.template_id) item.assignees = [...sanitizedTaskAssignees];
+        });
+      }
+    }
+    if (tpl && Array.isArray(tpl.assignees) && tpl.assignees.length !== sanitizedTplAssignees.length) {
+      tpl.assignees = [...sanitizedTplAssignees];
+    }
+
     const weekdays = tpl?.weekdays?.length
       ? [...tpl.weekdays]
       : this._weekdayKeys().some((d) => d.key === task.column)
@@ -583,7 +600,7 @@ class HouseholdChoresCard extends HTMLElement {
       endDate: task.end_date || tpl?.end_date || "",
       column: task.column || "backlog",
       weekdays,
-      assignees: [...task.assignees],
+      assignees: nextAssignees,
     };
 
     this._taskFormOriginal = this._cloneTaskForm(this._taskForm);
@@ -1122,17 +1139,21 @@ class HouseholdChoresCard extends HTMLElement {
           .map(
             (person) =>
               `<div class="legend-item">
-                <span class="chip-wrap">
-                  <span class="chip" draggable="true" data-person-id="${person.id}" style="background:${person.color}">${this._personInitial(person.name)}</span>
-                  <span class="role-badge ${person.role === "child" ? "child" : "adult"}">${this._personRoleLabel(person.role)}</span>
-                </span>
-                <span class="legend-name">${this._escape(person.name)}</span>
-                <select class="person-role-select" data-person-role-id="${person.id}">
-                  <option value="adult" ${person.role !== "child" ? "selected" : ""}>Adult</option>
-                  <option value="child" ${person.role === "child" ? "selected" : ""}>Child</option>
-                </select>
-                <input class="person-color-input" data-person-color-id="${person.id}" type="color" value="${this._normalizeHexColor(person.color, this._suggestPersonColor())}" title="Choose color" />
-                <button type="button" class="person-delete" data-delete-person-id="${person.id}" title="Delete person">Delete</button>
+                <div class="legend-top">
+                  <span class="chip-wrap">
+                    <span class="chip" draggable="true" data-person-id="${person.id}" style="background:${person.color}">${this._personInitial(person.name)}</span>
+                    <span class="role-badge ${person.role === "child" ? "child" : "adult"}">${this._personRoleLabel(person.role)}</span>
+                  </span>
+                  <span class="legend-name">${this._escape(person.name)}</span>
+                </div>
+                <div class="legend-controls">
+                  <select class="person-role-select" data-person-role-id="${person.id}">
+                    <option value="adult" ${person.role !== "child" ? "selected" : ""}>Adult</option>
+                    <option value="child" ${person.role === "child" ? "selected" : ""}>Child</option>
+                  </select>
+                  <input class="person-color-input" data-person-color-id="${person.id}" data-focus-key="person-color-${person.id}" type="color" value="${this._normalizeHexColor(person.color, this._suggestPersonColor())}" title="Choose color" />
+                  <button type="button" class="person-delete" data-delete-person-id="${person.id}" title="Delete person">Delete</button>
+                </div>
               </div>`
           )
           .join("")}
@@ -1202,7 +1223,7 @@ class HouseholdChoresCard extends HTMLElement {
               <option value="adult" ${this._newPersonRole !== "child" ? "selected" : ""}>Adult</option>
               <option value="child" ${this._newPersonRole === "child" ? "selected" : ""}>Child</option>
             </select>
-            <input id="person-color" type="color" value="${this._normalizeHexColor(this._newPersonColor, this._suggestPersonColor())}" title="Choose color" />
+            <input id="person-color" data-focus-key="person-color-new" type="color" value="${this._normalizeHexColor(this._newPersonColor, this._suggestPersonColor())}" title="Choose color" />
             <button id="person-submit" type="submit" ${this._canSubmitPersonForm() ? "" : "disabled"}>Add</button>
           </form>
           <div class="small">Tip: drag a person badge onto any task to assign.</div>
@@ -1354,11 +1375,13 @@ class HouseholdChoresCard extends HTMLElement {
         .modal-head h3{margin:0;font-size:1rem}
         .close-btn{background:#e2e8f0;color:#0f172a;border:1px solid #cbd5e1;min-width:36px;padding:6px 10px}
         .row{display:flex;gap:6px;align-items:center}
-        .legend-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px}
-        .legend-item{display:flex;align-items:center;gap:6px;background:#f8fafc;border-radius:9px;padding:4px 6px}
+        .legend-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+        .legend-item{display:grid;gap:8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:8px}
+        .legend-top{display:flex;align-items:center;gap:8px;min-width:0}
         .legend-name{font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-        .person-role-select{min-width:74px;padding:4px 6px;font-size:.74rem}
-        .person-color-input{width:38px;height:30px;padding:2px}
+        .legend-controls{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;align-items:center}
+        .person-role-select{min-width:88px;padding:6px 8px;font-size:.74rem}
+        .person-color-input{width:40px;height:32px;padding:2px}
         .task-form{margin-top:10px;display:grid;gap:8px}
         .toggle-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
         .toggle-row label{display:flex;gap:6px;align-items:center;font-size:.84rem}
@@ -1398,6 +1421,7 @@ class HouseholdChoresCard extends HTMLElement {
           }
           .settings-inline{flex-wrap:wrap}
           .labels-grid{grid-template-columns:1fr 1fr}
+          .legend-list{grid-template-columns:1fr}
         }
       </style>
 
@@ -1501,7 +1525,7 @@ class HouseholdChoresCard extends HTMLElement {
     if (personForm) personForm.addEventListener("submit", (ev) => this._onAddPerson(ev));
     if (personInput) personInput.addEventListener("input", (ev) => this._onPersonNameInput(ev));
     if (personRoleInput) personRoleInput.addEventListener("change", (ev) => this._onPersonRoleInput(ev));
-    if (personColorInput) personColorInput.addEventListener("input", (ev) => this._onPersonColorInput(ev));
+    if (personColorInput) personColorInput.addEventListener("change", (ev) => this._onPersonColorInput(ev));
     if (settingsForm) settingsForm.addEventListener("submit", (ev) => this._onSubmitSettings(ev));
     if (settingsTitle) settingsTitle.addEventListener("input", (ev) => this._onSettingsFieldInput(["title"], ev.target.value));
     if (settingsTheme) settingsTheme.addEventListener("change", (ev) => this._onSettingsFieldInput(["theme"], ev.target.value));
@@ -1533,7 +1557,7 @@ class HouseholdChoresCard extends HTMLElement {
       select.addEventListener("change", (ev) => this._onChangePersonRole(select.dataset.personRoleId, ev.target.value));
     });
     personColorSelects.forEach((input) => {
-      input.addEventListener("input", (ev) => this._onChangePersonColor(input.dataset.personColorId, ev.target.value));
+      input.addEventListener("change", (ev) => this._onChangePersonColor(input.dataset.personColorId, ev.target.value));
     });
     this.shadowRoot.querySelectorAll(".weekday-dot").forEach((dot) => {
       dot.addEventListener("click", () => this._toggleTaskWeekday(dot.dataset.weekday));
