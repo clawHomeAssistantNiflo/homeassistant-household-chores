@@ -13,6 +13,8 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Secondary row: single full-width `Completed` lane below the week
 - On compact/mobile screens, `Completed` tasks switch to a responsive card grid (no forced overflow cards)
 - Header is simplified: week navigator + people strip (tap people strip to manage household members)
+- People strip is placed on the top row between week navigation and filters
+- `Upcoming` strip (next-week Monday/Tuesday preview) appears automatically only when upcoming tasks exist
 - Active person filter is shown as a compact chip near week controls (tap chip to clear quickly)
 - Focus mode is now segmented (`All`, `Adults`, `Children`, `Person`) for faster tablet filtering
 - Settings gear in header opens board-level configuration modal

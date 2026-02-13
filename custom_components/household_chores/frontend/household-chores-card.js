@@ -701,17 +701,17 @@ class HouseholdChoresCard extends HTMLElement {
     }
   }
 
-  _tasksForColumn(column) {
+  _tasksForColumn(column, weekOffset = this._weekOffset) {
     const isWeekdayColumn = this._weekdayKeys().some((day) => day.key === column);
-    const selectedWeekStart = this._weekStartIso(this._weekOffset);
+    const selectedWeekStart = this._weekStartIso(weekOffset);
     const currentWeekStart = this._weekStartIso(0);
     const stored = this._board.tasks
       .filter((t) => t.column === column)
       .filter((t) => (t.week_start || currentWeekStart) === selectedWeekStart)
       .sort((a, b) => a.order - b.order || a.created_at.localeCompare(b.created_at));
 
-    if (isWeekdayColumn && this._weekOffset > 0) {
-      const projected = this._projectedTasksForFutureWeekday(column, this._weekOffset).filter(
+    if (isWeekdayColumn && weekOffset > 0) {
+      const projected = this._projectedTasksForFutureWeekday(column, weekOffset).filter(
         (task) => !stored.some((item) => item.template_id && item.template_id === task.template_id)
       );
       return [...stored, ...projected];
@@ -1941,7 +1941,7 @@ class HouseholdChoresCard extends HTMLElement {
     const isTodayColumn = isWeekday && this._weekOffset === 0 && column.key === this._todayWeekdayKey();
     const weekdayDate = isWeekday ? this._formatWeekdayDateCompact(column.key) : "";
     const daySpanRows = isWeekday ? (this._spanLayoutCache?.dayRows?.[column.key] || 0) : 0;
-    const daySpanPad = daySpanRows > 0 ? `<div class="span-day-pad" style="height:${daySpanRows * 42}px"></div>` : "";
+    const daySpanPad = daySpanRows > 0 ? `<div class="span-day-pad" style="height:${daySpanRows * 42 + 6}px"></div>` : "";
     const emptyTitle = isWeekday ? "Tap to add" : "Drop completed";
     const emptySub = isWeekday ? "Drop here or swipe tasks" : "Tap to add or drop task";
     const emptyContent = `
@@ -2032,6 +2032,29 @@ class HouseholdChoresCard extends HTMLElement {
         <span>${this._escape(person.name)}</span>
         <span class="clear-mark">x</span>
       </button>
+    `;
+  }
+
+  _renderUpcomingStrip() {
+    const nextOffset = this._weekOffset + 1;
+    if (nextOffset > this._maxWeekOffset) return "";
+    const candidateDays = ["monday", "tuesday"];
+    const items = [];
+    for (const dayKey of candidateDays) {
+      const dayTasks = this._tasksVisibleByFilter(this._tasksForColumn(dayKey, nextOffset))
+        .filter((task) => task.column !== "done")
+        .filter((task) => !task.span_id || Number(task.span_index || 0) === 0);
+      for (const task of dayTasks) items.push({ dayKey, task });
+    }
+    if (!items.length) return "";
+    return `
+      <div class="upcoming-strip" role="note">
+        <span class="upcoming-label">Upcoming</span>
+        ${items
+          .slice(0, 8)
+          .map((item) => `<span class="upcoming-pill"><strong>${this._escape(this._labelForColumn(item.dayKey))}</strong><span>${this._escape(item.task.title)}</span></span>`)
+          .join("")}
+      </div>
     `;
   }
 
@@ -2282,7 +2305,8 @@ class HouseholdChoresCard extends HTMLElement {
         .wrap{display:grid;gap:8px;padding:8px 12px 12px}
         .board-title{margin:0;padding:0;font-size:1.55rem;line-height:1.1;font-weight:600;letter-spacing:-.01em;color:var(--hc-text)}
         .panel{background:var(--hc-card);border:1px solid var(--hc-border);border-radius:14px;padding:10px}
-        .top-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px}
+        .top-row{display:grid;grid-template-columns:auto minmax(220px,1fr) auto;align-items:center;gap:8px}
+        .top-middle{min-width:0}
         .assignee-filter{display:flex;align-items:center;gap:6px}
         .assignee-filter label{font-size:.74rem;color:#64748b;font-weight:600}
         .assignee-filter select{padding:6px 8px;min-width:120px;height:34px}
@@ -2301,10 +2325,14 @@ class HouseholdChoresCard extends HTMLElement {
         .swipe-hint{font-size:.72rem;color:var(--hc-muted)}
         .header-actions{display:flex;align-items:center;gap:8px}
         #open-settings{width:34px;padding:0;display:inline-flex;align-items:center;justify-content:center}
-        .people-strip{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;border:1px dashed #cbd5e1;border-radius:10px;padding:6px 8px;cursor:pointer;background:#f8fafc;min-height:38px}
+        .people-strip{display:flex;gap:6px;flex-wrap:wrap;align-items:center;border:1px dashed #cbd5e1;border-radius:10px;padding:6px 8px;cursor:pointer;background:#f8fafc;min-height:38px}
         .people-strip:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
         .people-strip-label{font-size:.76rem;font-weight:700;color:#334155;margin-right:2px}
         .people-strip-empty{font-size:.78rem;color:#64748b}
+        .upcoming-strip{margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:10px;padding:6px 8px}
+        .upcoming-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#64748b}
+        .upcoming-pill{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #dbe3ef;border-radius:999px;padding:4px 8px;font-size:.76rem;color:#334155}
+        .upcoming-pill strong{font-size:.72rem;color:#475569}
         .quick-templates{margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
         .quick-label{font-size:.72rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
         .quick-template-btn{height:28px;padding:0 10px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:.74rem}
@@ -2467,6 +2495,7 @@ class HouseholdChoresCard extends HTMLElement {
         .settings-advanced[open] summary{margin-bottom:8px}
         @media (max-width:900px){
           .top-row{grid-template-columns:1fr}
+          .top-middle{order:2}
           .header-actions{justify-content:space-between}
           .assignee-filter{flex-wrap:wrap}
           .side-columns{grid-template-columns:1fr}
@@ -2511,6 +2540,19 @@ class HouseholdChoresCard extends HTMLElement {
                 </div>
                 <button class="week-nav-btn" type="button" id="week-next" ${this._weekOffset >= this._maxWeekOffset ? "disabled" : ""}>▶</button>
               </div>
+              <div class="top-middle">
+                <div class="people-strip" id="open-people" role="button" tabindex="0" aria-label="Open people">
+                  <span class="people-strip-label">People</span>
+                  ${
+                    this._board.people.length
+                      ? this._board.people
+                          .slice(0, 12)
+                          .map((person) => `<span class="person-pill"><span class="chip-wrap"><span class="chip" draggable="true" data-person-id="${person.id}" style="background:${person.color}" title="${this._escape(person.name)}">${this._personInitial(person.name)}</span><span class="role-badge ${person.role === "child" ? "child" : "adult"}">${this._personRoleLabel(person.role)}</span></span><span>${this._escape(person.name)}</span></span>`)
+                          .join("")
+                      : `<span class="people-strip-empty">Tap to add people</span>`
+                  }
+                </div>
+              </div>
               <div class="header-actions">
                 <div class="swipe-hint">Swipe left/right (0..+3)</div>
                 ${this._renderActiveFilterChip()}
@@ -2519,17 +2561,7 @@ class HouseholdChoresCard extends HTMLElement {
               </div>
             </div>
             ${this._renderOnboardingBanner()}
-            <div class="people-strip" id="open-people" role="button" tabindex="0" aria-label="Open people">
-              <span class="people-strip-label">People</span>
-              ${
-                this._board.people.length
-                  ? this._board.people
-                      .slice(0, 12)
-                      .map((person) => `<span class="person-pill"><span class="chip-wrap"><span class="chip" draggable="true" data-person-id="${person.id}" style="background:${person.color}" title="${this._escape(person.name)}">${this._personInitial(person.name)}</span><span class="role-badge ${person.role === "child" ? "child" : "adult"}">${this._personRoleLabel(person.role)}</span></span><span>${this._escape(person.name)}</span></span>`)
-                      .join("")
-                  : `<span class="people-strip-empty">Tap to add people</span>`
-              }
-            </div>
+            ${this._renderUpcomingStrip()}
             ${this._renderQuickTemplatesBar()}
           </div>
 
