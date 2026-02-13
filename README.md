@@ -6,16 +6,17 @@ Household Chores is a HACS-installable custom integration for a weekly household
 
 - Main week row: Monday to Sunday
 - Weekday columns are compressed to fit screen width (no horizontal week scroll)
+- Week navigation with ISO week number (`Week XX`) and swipe/arrow browsing from current week up to +3 weeks
 - Secondary row: Backlog + Done in a 2-column grid below the week
 - On compact/mobile screens, Backlog/Done tasks switch to a responsive card grid (no forced overflow cards)
-- Header spacing is tightened so title sits closer to action buttons
+- Header is simplified: week navigator + people strip (tap people strip to manage household members)
 - Backlog/Done lanes are intentionally shorter (about 2 task rows viewport)
 - Each lane card acts as a hidden quick-add area:
   - tap/click whitespace in `Mon..Sun`, `Backlog`, or `Done` to open Add task prefilled for that lane
   - tap/click on a task still opens edit/delete for that task
 - People with unique colored circular badges and first-letter initials
-- Compact mobile-first actions: `People` and `Add task` buttons open modal forms
-- `Add` / `Create` / `Save` submit buttons stay disabled (grey) until title/name input is filled
+- `Add` / `Create` buttons stay disabled (grey) until title/name input is filled
+- `Save` stays disabled when opening an existing task, and only enables after a real change
 - Modal input focus is preserved during card re-renders (typing no longer drops focus mid-edit)
 - Click any task to edit title/assignees/day/end date in modal
 - Delete task directly from the edit modal
@@ -79,6 +80,9 @@ The screenshots below are updated with each UI/layout release.
 
 ### Drag and drop between days
 ![Drag and drop state](docs/screenshots/weekly-board-drag-drop.png)
+
+### Mobile / compact
+![Mobile weekly board](docs/screenshots/weekly-board-mobile.png)
 
 ## Notes
 

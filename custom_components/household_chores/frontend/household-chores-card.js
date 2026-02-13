@@ -20,6 +20,10 @@ class HouseholdChoresCard extends HTMLElement {
     this._showPeopleModal = false;
     this._showTaskModal = false;
     this._draggingTask = false;
+    this._weekOffset = 0;
+    this._maxWeekOffset = 3;
+    this._swipeStartX = null;
+    this._taskFormOriginal = null;
 
     this._taskForm = this._emptyTaskForm("add");
   }
@@ -115,17 +119,17 @@ class HouseholdChoresCard extends HTMLElement {
     return new Date().toISOString().slice(0, 10);
   }
 
-  _startOfWeek(baseDate = new Date()) {
+  _startOfWeek(baseDate = new Date(), weekOffset = 0) {
     const d = new Date(baseDate);
     const day = d.getDay();
     const diff = (day + 6) % 7;
-    d.setDate(d.getDate() - diff);
+    d.setDate(d.getDate() - diff + weekOffset * 7);
     d.setHours(0, 0, 0, 0);
     return d;
   }
 
-  _weekdayDateForCurrentWeek(weekdayKey) {
-    const weekStart = this._startOfWeek();
+  _weekdayDateForWeek(weekdayKey, weekOffset = 0) {
+    const weekStart = this._startOfWeek(new Date(), weekOffset);
     const idx = this._weekdayKeys().findIndex((d) => d.key === weekdayKey);
     if (idx < 0) return null;
     const d = new Date(weekStart);
@@ -133,8 +137,61 @@ class HouseholdChoresCard extends HTMLElement {
     return d;
   }
 
+  _weekdayDateForCurrentWeek(weekdayKey) {
+    return this._weekdayDateForWeek(weekdayKey, 0);
+  }
+
   _toIsoDate(dateObj) {
     return dateObj.toISOString().slice(0, 10);
+  }
+
+  _isoWeekNumber(dateObj) {
+    const d = new Date(Date.UTC(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate()));
+    const day = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - day);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  }
+
+  _weekNumberForOffset(offset = this._weekOffset) {
+    return this._isoWeekNumber(this._startOfWeek(new Date(), offset));
+  }
+
+  _weekRangeLabel(offset = this._weekOffset) {
+    const start = this._startOfWeek(new Date(), offset);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    const fmt = new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "2-digit" });
+    return `${fmt.format(start)} - ${fmt.format(end)}`;
+  }
+
+  _formatWeekdayDate(weekdayKey, offset = this._weekOffset) {
+    const date = this._weekdayDateForWeek(weekdayKey, offset);
+    if (!date) return "";
+    return new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "2-digit" }).format(date);
+  }
+
+  _isReadOnlyWeekView() {
+    return this._weekOffset !== 0;
+  }
+
+  _shiftWeek(delta) {
+    this._weekOffset = Math.min(this._maxWeekOffset, Math.max(0, this._weekOffset + delta));
+    this._render();
+  }
+
+  _onWeekTouchStart(ev) {
+    if (!ev.touches || ev.touches.length !== 1) return;
+    this._swipeStartX = ev.touches[0].clientX;
+  }
+
+  _onWeekTouchEnd(ev) {
+    if (this._swipeStartX === null || !ev.changedTouches || !ev.changedTouches.length) return;
+    const delta = ev.changedTouches[0].clientX - this._swipeStartX;
+    this._swipeStartX = null;
+    if (Math.abs(delta) < 40) return;
+    if (delta < 0) this._shiftWeek(1);
+    else this._shiftWeek(-1);
   }
 
   _normalizeBoard(board) {
@@ -306,9 +363,35 @@ class HouseholdChoresCard extends HTMLElement {
   }
 
   _tasksForColumn(column) {
+    const isWeekdayColumn = this._weekdayKeys().some((day) => day.key === column);
+    if (isWeekdayColumn && this._weekOffset > 0) {
+      return this._projectedTasksForFutureWeekday(column, this._weekOffset);
+    }
     return this._board.tasks
       .filter((t) => t.column === column)
       .sort((a, b) => a.order - b.order || a.created_at.localeCompare(b.created_at));
+  }
+
+  _projectedTasksForFutureWeekday(weekdayKey, weekOffset) {
+    const dayDate = this._weekdayDateForWeek(weekdayKey, weekOffset);
+    if (!dayDate) return [];
+    const dayIso = this._toIsoDate(dayDate);
+
+    return this._board.templates
+      .filter((tpl) => Array.isArray(tpl.weekdays) && tpl.weekdays.includes(weekdayKey) && tpl.end_date && dayIso <= tpl.end_date)
+      .map((tpl, idx) => ({
+        id: `virtual_${tpl.id}_${weekdayKey}_${weekOffset}_${idx}`,
+        title: tpl.title,
+        assignees: [...(tpl.assignees || [])],
+        column: weekdayKey,
+        order: idx,
+        created_at: tpl.created_at || "",
+        end_date: tpl.end_date,
+        template_id: tpl.id,
+        fixed: true,
+        virtual: true,
+      }))
+      .sort((a, b) => a.title.localeCompare(b.title));
   }
 
   _reindexAllColumns() {
@@ -332,6 +415,7 @@ class HouseholdChoresCard extends HTMLElement {
 
   _openAddTaskModal() {
     this._taskForm = this._emptyTaskForm("add");
+    this._taskFormOriginal = this._cloneTaskForm(this._taskForm);
     this._showTaskModal = true;
     this._render();
   }
@@ -345,6 +429,7 @@ class HouseholdChoresCard extends HTMLElement {
       next.column = columnKey;
     }
     this._taskForm = next;
+    this._taskFormOriginal = this._cloneTaskForm(this._taskForm);
     this._showTaskModal = true;
     this._render();
   }
@@ -372,6 +457,7 @@ class HouseholdChoresCard extends HTMLElement {
       assignees: [...task.assignees],
     };
 
+    this._taskFormOriginal = this._cloneTaskForm(this._taskForm);
     this._showTaskModal = true;
     this._render();
   }
@@ -379,6 +465,7 @@ class HouseholdChoresCard extends HTMLElement {
   _closeTaskModal() {
     this._showTaskModal = false;
     this._taskForm = this._emptyTaskForm("add");
+    this._taskFormOriginal = null;
     this._render();
   }
 
@@ -421,12 +508,39 @@ class HouseholdChoresCard extends HTMLElement {
     this._updateSubmitButtons();
   }
 
+  _cloneTaskForm(form) {
+    return {
+      ...form,
+      weekdays: [...(form.weekdays || [])],
+      assignees: [...(form.assignees || [])],
+    };
+  }
+
+  _normalizedTaskForm(form) {
+    return {
+      title: (form.title || "").trim(),
+      fixed: Boolean(form.fixed),
+      endDate: form.endDate || "",
+      column: form.column || "backlog",
+      weekdays: [...(form.weekdays || [])].sort(),
+      assignees: [...(form.assignees || [])].sort(),
+    };
+  }
+
+  _isTaskFormDirty() {
+    if (this._taskForm.mode !== "edit" || !this._taskFormOriginal) return false;
+    return JSON.stringify(this._normalizedTaskForm(this._taskForm)) !== JSON.stringify(this._normalizedTaskForm(this._taskFormOriginal));
+  }
+
   _canSubmitPersonForm() {
     return Boolean(this._newPersonName.trim());
   }
 
   _canSubmitTaskForm() {
-    return Boolean(this._taskForm.title && this._taskForm.title.trim()) && !this._saving;
+    if (this._saving) return false;
+    if (!this._taskForm.title || !this._taskForm.title.trim()) return false;
+    if (this._taskForm.mode === "edit") return this._isTaskFormDirty();
+    return true;
   }
 
   _updateSubmitButtons() {
@@ -647,6 +761,7 @@ class HouseholdChoresCard extends HTMLElement {
 
   async _onSubmitTaskForm(ev) {
     ev.preventDefault();
+    if (!this._canSubmitTaskForm()) return;
     this._error = "";
     if (this._taskForm.mode === "edit") await this._updateTaskFromForm();
     else await this._createTaskFromForm();
@@ -670,12 +785,13 @@ class HouseholdChoresCard extends HTMLElement {
   }
 
   _assigneeChips(task) {
+    const draggable = !this._isReadOnlyWeekView() && !task.virtual;
     return task.assignees
       .map((personId) => this._board.people.find((p) => p.id === personId))
       .filter(Boolean)
       .map(
         (person) =>
-          `<span class="chip" draggable="true" data-person-id="${person.id}" data-source-task-id="${task.id}" style="background:${person.color}" title="${this._escape(person.name)}">${this._personInitial(person.name)}</span>`
+          `<span class="chip" draggable="${draggable ? "true" : "false"}" data-person-id="${person.id}" ${draggable ? `data-source-task-id="${task.id}"` : ""} style="background:${person.color}" title="${this._escape(person.name)}">${this._personInitial(person.name)}</span>`
       )
       .join("");
   }
@@ -724,8 +840,9 @@ class HouseholdChoresCard extends HTMLElement {
   }
 
   _renderTaskCard(task) {
+    const draggable = !this._isReadOnlyWeekView() && !task.virtual;
     return `
-      <article class="task" draggable="true" data-task-id="${task.id}">
+      <article class="task ${task.virtual ? "virtual-task" : ""}" draggable="${draggable ? "true" : "false"}" data-task-id="${task.id}" data-virtual="${task.virtual ? "1" : "0"}">
         <div class="task-title">${this._escape(task.title)}</div>
         ${this._taskMetaLine(task)}
         <div class="task-meta">${this._assigneeChips(task)}</div>
@@ -736,14 +853,16 @@ class HouseholdChoresCard extends HTMLElement {
   _renderColumn(column) {
     const tasks = this._tasksForColumn(column.key);
     const isSideLane = column.key === "backlog" || column.key === "done";
+    const isWeekday = this._weekdayKeys().some((day) => day.key === column.key);
+    const weekdayDate = isWeekday ? this._formatWeekdayDate(column.key) : "";
     const emptyContent = `
       <div class="empty-wrap ${isSideLane ? "side-empty" : "week-empty"}">
-        <div class="empty">Drop here</div>
+        <div class="empty">${this._isReadOnlyWeekView() && isWeekday ? "No fixed tasks" : "Drop here"}</div>
       </div>
     `;
     return `
-      <section class="column ${isSideLane ? "side-lane" : "week-lane"}" data-column="${column.key}">
-        <header><h3>${column.label}</h3><span>${tasks.length}</span></header>
+      <section class="column ${isSideLane ? "side-lane" : "week-lane"} ${this._isReadOnlyWeekView() && isWeekday ? "week-readonly" : ""}" data-column="${column.key}">
+        <header><h3>${column.label}${weekdayDate ? `<small>${weekdayDate}</small>` : ""}</h3><span>${tasks.length}</span></header>
         <div class="tasks">
           ${tasks.length ? tasks.map((task) => this._renderTaskCard(task)).join("") : emptyContent}
         </div>
@@ -849,10 +968,17 @@ class HouseholdChoresCard extends HTMLElement {
         .wrap{display:grid;gap:6px;padding:6px 12px 12px}
         .board-title{margin:0;padding:2px 0 0;font-size:2rem;line-height:1.1;font-weight:500;color:var(--hc-text)}
         .panel{background:var(--hc-card);border:1px solid var(--hc-border);border-radius:14px;padding:10px}
-        .actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-        .action-btn{font:inherit;border-radius:10px;border:1px solid transparent;padding:10px;background:var(--hc-accent);color:#fff;font-weight:700;cursor:pointer}
-        button:disabled{background:#cbd5e1 !important;color:#64748b !important;border-color:#cbd5e1 !important;cursor:not-allowed;opacity:1}
-        .legend-inline{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
+        .top-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+        .week-nav{display:flex;align-items:center;gap:8px}
+        .week-nav-btn{border:1px solid #94a3b8;background:#fff;color:#1e293b;border-radius:10px;padding:6px 10px;font-weight:700;cursor:pointer}
+        .week-label{font-weight:700;font-size:.92rem}
+        .week-sub{font-size:.78rem;color:var(--hc-muted)}
+        .swipe-hint{font-size:.75rem;color:var(--hc-muted)}
+        .people-strip{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;border:1px dashed #cbd5e1;border-radius:10px;padding:6px 8px;cursor:pointer;background:#f8fafc}
+        .people-strip:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+        .people-strip-label{font-size:.78rem;font-weight:700;color:#334155;margin-right:2px}
+        .people-strip-empty{font-size:.78rem;color:#64748b}
+        button:disabled{background:#e2e8f0 !important;color:#64748b !important;border-color:#cbd5e1 !important;cursor:not-allowed;opacity:1}
         .person-pill{display:flex;align-items:center;gap:6px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:3px 8px 3px 4px;font-size:.78rem;color:#334155}
         .person-delete{margin-left:auto;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:8px;padding:4px 8px;font-size:.72rem;cursor:pointer}
         .chip{width:22px;height:22px;border-radius:999px;color:#fff;font-weight:700;font-size:.75rem;display:inline-flex;align-items:center;justify-content:center;box-shadow:inset 0 -1px 0 rgba(0,0,0,.2)}
@@ -869,10 +995,12 @@ class HouseholdChoresCard extends HTMLElement {
         .side-columns .column.side-lane .task{min-width:180px;flex:0 0 180px}
         .column.drag-over{border-color:#2563eb;box-shadow:inset 0 0 0 1px #2563eb;background:#f0f7ff}
         .column header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
-        .column h3{margin:0;font-size:.82rem}
+        .column h3{margin:0;font-size:.82rem;display:flex;flex-direction:column;gap:2px}
+        .column h3 small{font-weight:500;color:#64748b;font-size:.68rem}
         .column header span{font-size:.75rem;color:var(--hc-muted)}
         .tasks{display:grid;gap:6px;align-content:start}
         .task{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:7px;cursor:grab;user-select:none}
+        .task.virtual-task{cursor:default;opacity:.96}
         .task-title{font-size:.78rem;font-weight:600;line-height:1.25}
         .task-sub{margin-top:4px;color:#64748b;font-size:.73rem}
         .task-meta{margin-top:6px;display:flex;gap:4px;flex-wrap:wrap}
@@ -931,12 +1059,29 @@ class HouseholdChoresCard extends HTMLElement {
           ${loadingHtml}
           ${errorHtml}
           <div class="panel">
-            <div class="actions">
-              <button class="action-btn" type="button" id="open-people">People</button>
-              <button class="action-btn" type="button" id="open-task">Add task</button>
+            <div class="top-row">
+              <div>
+                <div class="week-nav">
+                  <button class="week-nav-btn" type="button" id="week-prev" ${this._weekOffset === 0 ? "disabled" : ""}>◀</button>
+                  <div>
+                    <div class="week-label">Week ${this._weekNumberForOffset()}</div>
+                    <div class="week-sub">${this._weekRangeLabel()}</div>
+                  </div>
+                  <button class="week-nav-btn" type="button" id="week-next" ${this._weekOffset >= this._maxWeekOffset ? "disabled" : ""}>▶</button>
+                </div>
+              </div>
+              <div class="swipe-hint">Swipe left/right to browse weeks (0..+3)</div>
             </div>
-            <div class="legend-inline">
-              ${this._board.people.slice(0, 12).map((person) => `<span class="person-pill"><span class="chip" draggable="true" data-person-id="${person.id}" style="background:${person.color}" title="${this._escape(person.name)}">${this._personInitial(person.name)}</span><span>${this._escape(person.name)}</span></span>`).join("")}
+            <div class="people-strip" id="open-people" role="button" tabindex="0" aria-label="Open people">
+              <span class="people-strip-label">People</span>
+              ${
+                this._board.people.length
+                  ? this._board.people
+                      .slice(0, 12)
+                      .map((person) => `<span class="person-pill"><span class="chip" draggable="true" data-person-id="${person.id}" style="background:${person.color}" title="${this._escape(person.name)}">${this._personInitial(person.name)}</span><span>${this._escape(person.name)}</span></span>`)
+                      .join("")
+                  : `<span class="people-strip-empty">Tap to add people</span>`
+              }
             </div>
           </div>
 
@@ -952,7 +1097,8 @@ class HouseholdChoresCard extends HTMLElement {
     `;
 
     const openPeopleBtn = this.shadowRoot.querySelector("#open-people");
-    const openTaskBtn = this.shadowRoot.querySelector("#open-task");
+    const weekPrevBtn = this.shadowRoot.querySelector("#week-prev");
+    const weekNextBtn = this.shadowRoot.querySelector("#week-next");
     const closePeopleBtn = this.shadowRoot.querySelector("#close-people");
     const closeTaskBtn = this.shadowRoot.querySelector("#close-task");
     const peopleBackdrop = this.shadowRoot.querySelector("#people-backdrop");
@@ -967,8 +1113,17 @@ class HouseholdChoresCard extends HTMLElement {
     const deleteTaskBtn = this.shadowRoot.querySelector("#delete-task");
     const deletePersonButtons = this.shadowRoot.querySelectorAll("[data-delete-person-id]");
 
-    if (openPeopleBtn) openPeopleBtn.addEventListener("click", () => this._openPeopleModal());
-    if (openTaskBtn) openTaskBtn.addEventListener("click", () => this._openAddTaskModal());
+    if (openPeopleBtn) {
+      openPeopleBtn.addEventListener("click", () => this._openPeopleModal());
+      openPeopleBtn.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          this._openPeopleModal();
+        }
+      });
+    }
+    if (weekPrevBtn) weekPrevBtn.addEventListener("click", () => this._shiftWeek(-1));
+    if (weekNextBtn) weekNextBtn.addEventListener("click", () => this._shiftWeek(1));
     if (closePeopleBtn) closePeopleBtn.addEventListener("click", () => this._closePeopleModal());
     if (closeTaskBtn) closeTaskBtn.addEventListener("click", () => this._closeTaskModal());
     if (peopleBackdrop) peopleBackdrop.addEventListener("click", (ev) => { if (ev.target === peopleBackdrop) this._closePeopleModal(); });
@@ -1013,20 +1168,24 @@ class HouseholdChoresCard extends HTMLElement {
     });
 
     this.shadowRoot.querySelectorAll(".task").forEach((taskEl) => {
+      const isVirtual = taskEl.dataset.virtual === "1";
       const taskId = taskEl.dataset.taskId;
-      taskEl.addEventListener("dragstart", (ev) => {
-        this._draggingTask = true;
-        ev.dataTransfer.effectAllowed = "move";
-        ev.dataTransfer.setData("text/task", taskId);
-      });
-      taskEl.addEventListener("dragend", () => {
-        setTimeout(() => {
-          this._draggingTask = false;
-        }, 0);
-      });
+      if (!this._isReadOnlyWeekView() && !isVirtual) {
+        taskEl.addEventListener("dragstart", (ev) => {
+          this._draggingTask = true;
+          ev.dataTransfer.effectAllowed = "move";
+          ev.dataTransfer.setData("text/task", taskId);
+        });
+        taskEl.addEventListener("dragend", () => {
+          setTimeout(() => {
+            this._draggingTask = false;
+          }, 0);
+        });
+      }
 
       taskEl.addEventListener("click", () => {
         if (this._draggingTask) return;
+        if (isVirtual) return;
         this._openEditTaskModal(taskId);
       });
 
@@ -1052,6 +1211,8 @@ class HouseholdChoresCard extends HTMLElement {
     this.shadowRoot.querySelectorAll(".column").forEach((columnEl) => {
       const columnKey = columnEl.dataset.column;
       columnEl.addEventListener("click", (ev) => {
+        const isWeekdayColumn = this._weekdayKeys().some((day) => day.key === columnKey);
+        if (this._isReadOnlyWeekView() && isWeekdayColumn) return;
         if (this._draggingTask) return;
         if (ev.target.closest(".task")) return;
         if (ev.target.closest("header")) return;
@@ -1059,6 +1220,7 @@ class HouseholdChoresCard extends HTMLElement {
         this._openAddTaskModalForColumn(columnKey);
       });
       columnEl.addEventListener("dragover", (ev) => {
+        if (this._isReadOnlyWeekView()) return;
         if (ev.dataTransfer.types.includes("text/task")) {
           ev.preventDefault();
           columnEl.classList.add("drag-over");
@@ -1068,6 +1230,7 @@ class HouseholdChoresCard extends HTMLElement {
         columnEl.classList.remove("drag-over");
       });
       columnEl.addEventListener("drop", async (ev) => {
+        if (this._isReadOnlyWeekView()) return;
         columnEl.classList.remove("drag-over");
         const taskId = ev.dataTransfer.getData("text/task");
         const personId = ev.dataTransfer.getData("text/person-assignment");
@@ -1090,6 +1253,12 @@ class HouseholdChoresCard extends HTMLElement {
         await this._saveBoard();
       });
     });
+
+    const weekScroll = this.shadowRoot.querySelector(".week-scroll");
+    if (weekScroll) {
+      weekScroll.addEventListener("touchstart", (ev) => this._onWeekTouchStart(ev), { passive: true });
+      weekScroll.addEventListener("touchend", (ev) => this._onWeekTouchEnd(ev), { passive: true });
+    }
 
     this._restoreFocusState(focusState);
   }
