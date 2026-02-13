@@ -173,6 +173,11 @@ class HouseholdBoardStore:
                     "assignees": [str(item) for item in template.get("assignees", [])],
                     "end_date": end_date.isoformat(),
                     "weekdays": weekdays,
+                    "excluded_dates": [
+                        excluded.isoformat()
+                        for excluded in (_parse_date(item) for item in template.get("excluded_dates", []))
+                        if excluded is not None
+                    ],
                     "created_at": str(template.get("created_at") or datetime.now(UTC).isoformat()),
                 }
             )
@@ -237,6 +242,8 @@ class HouseholdBoardStore:
                 for weekday in template["weekdays"]:
                     day_date = week_start + timedelta(days=WEEKDAY_INDEX[weekday])
                     if day_date > end_date:
+                        continue
+                    if day_date.isoformat() in set(template.get("excluded_dates", [])):
                         continue
 
                     generated.append(
@@ -359,6 +366,11 @@ class HouseholdBoardStore:
             weekdays = [day for day in template.get("weekdays", []) if day in WEEKDAY_INDEX]
             if end_date is None or not weekdays:
                 continue
+            excluded_dates = [
+                excluded.isoformat()
+                for excluded in (_parse_date(item) for item in template.get("excluded_dates", []))
+                if excluded is not None
+            ]
 
             normalized_templates.append(
                 {
@@ -367,6 +379,7 @@ class HouseholdBoardStore:
                     "assignees": assignees,
                     "end_date": end_date.isoformat(),
                     "weekdays": weekdays,
+                    "excluded_dates": sorted(set(excluded_dates)),
                     "created_at": str(template.get("created_at") or datetime.now(UTC).isoformat()),
                 }
             )

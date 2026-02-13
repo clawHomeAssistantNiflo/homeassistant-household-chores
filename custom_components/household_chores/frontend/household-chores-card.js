@@ -106,6 +106,8 @@ class HouseholdChoresCard extends HTMLElement {
       column: "backlog",
       weekdays: [],
       assignees: [],
+      occurrenceDate: "",
+      deleteSeries: false,
     };
   }
 
@@ -336,6 +338,7 @@ class HouseholdChoresCard extends HTMLElement {
           assignees: Array.isArray(tpl.assignees) ? tpl.assignees.filter((id) => knownPersonIds.has(id)) : [],
           end_date: tpl.end_date || "",
           weekdays: Array.isArray(tpl.weekdays) ? tpl.weekdays : [],
+          excluded_dates: Array.isArray(tpl.excluded_dates) ? tpl.excluded_dates : [],
           created_at: tpl.created_at || new Date().toISOString(),
         }))
         .filter((tpl) => tpl.title),
@@ -355,7 +358,6 @@ class HouseholdChoresCard extends HTMLElement {
           ...(settings.done_cleanup || {}),
         },
       },
-      activity: Array.isArray(board?.activity) ? board.activity.filter((item) => item && typeof item === "object").slice(0, 50) : [],
       updated_at: String(board?.updated_at || ""),
     };
   }
@@ -423,10 +425,6 @@ class HouseholdChoresCard extends HTMLElement {
       tasks: this._mergeCollectionById(remote.tasks, local.tasks, base.tasks),
       templates: this._mergeCollectionById(remote.templates, local.templates, base.templates),
       settings: this._deepEqual(local.settings, base.settings) ? remote.settings : local.settings,
-      activity: [...(Array.isArray(local.activity) ? local.activity : []), ...(Array.isArray(remote.activity) ? remote.activity : [])]
-        .filter((item) => item && typeof item === "object")
-        .filter((item, idx, arr) => arr.findIndex((x) => x.at === item.at && x.message === item.message) === idx)
-        .slice(0, 50),
       updated_at: remote.updated_at,
     });
     merged.updated_at = remote.updated_at;
@@ -469,13 +467,6 @@ class HouseholdChoresCard extends HTMLElement {
       return;
     }
     this._personFilter = value;
-  }
-
-  _logActivity(message) {
-    const msg = String(message || "").trim();
-    if (!msg) return;
-    const next = [{ at: new Date().toISOString(), message: msg }, ...(Array.isArray(this._board.activity) ? this._board.activity : [])];
-    this._board.activity = next.slice(0, 50);
   }
 
   _tasksVisibleByFilter(tasks) {
@@ -665,6 +656,7 @@ class HouseholdChoresCard extends HTMLElement {
 
     return this._board.templates
       .filter((tpl) => Array.isArray(tpl.weekdays) && tpl.weekdays.includes(weekdayKey) && tpl.end_date && dayIso <= tpl.end_date)
+      .filter((tpl) => !(Array.isArray(tpl.excluded_dates) && tpl.excluded_dates.includes(dayIso)))
       .map((tpl, idx) => ({
         id: `virtual_${tpl.id}_${weekdayKey}_${weekOffset}_${idx}`,
         title: tpl.title,
@@ -752,6 +744,7 @@ class HouseholdChoresCard extends HTMLElement {
       : this._weekdayKeys().some((d) => d.key === task.column)
         ? [task.column]
         : [];
+    const occurrenceDate = this._taskOccurrenceDate(task);
 
     this._taskForm = {
       mode: "edit",
@@ -763,6 +756,8 @@ class HouseholdChoresCard extends HTMLElement {
       column: task.column || "backlog",
       weekdays,
       assignees: nextAssignees,
+      occurrenceDate,
+      deleteSeries: false,
     };
 
     this._taskFormOriginal = this._cloneTaskForm(this._taskForm);
@@ -771,7 +766,7 @@ class HouseholdChoresCard extends HTMLElement {
     this._render();
   }
 
-  _openEditTemplateModal(templateId, fallbackColumn = "backlog") {
+  _openEditTemplateModal(templateId, fallbackColumn = "backlog", weekStartIso = "") {
     const tpl = this._board.templates.find((item) => item.id === templateId);
     if (!tpl) return;
     const knownPersonIds = new Set(this._board.people.map((person) => person.id));
@@ -780,6 +775,7 @@ class HouseholdChoresCard extends HTMLElement {
       tpl.assignees = [...assignees];
     }
 
+    const occurrenceDate = this._dateForWeekStartAndColumn(weekStartIso || this._weekStartIso(this._weekOffset), fallbackColumn);
     this._taskForm = {
       mode: "edit",
       taskId: "",
@@ -790,6 +786,8 @@ class HouseholdChoresCard extends HTMLElement {
       column: fallbackColumn || "backlog",
       weekdays: Array.isArray(tpl.weekdays) ? [...tpl.weekdays] : [],
       assignees,
+      occurrenceDate,
+      deleteSeries: false,
     };
 
     this._taskFormOriginal = this._cloneTaskForm(this._taskForm);
@@ -804,6 +802,24 @@ class HouseholdChoresCard extends HTMLElement {
     this._taskFormOriginal = null;
     this._taskFormDirty = false;
     this._render();
+  }
+
+  _dateForWeekStartAndColumn(weekStartIso, column) {
+    if (!weekStartIso || !this._weekdayKeys().some((day) => day.key === column)) return "";
+    const start = new Date(`${weekStartIso}T00:00:00`);
+    if (Number.isNaN(start.getTime())) return "";
+    const idx = this._weekdayKeys().findIndex((day) => day.key === column);
+    if (idx < 0) return "";
+    start.setDate(start.getDate() + idx);
+    return this._toIsoDate(start);
+  }
+
+  _taskOccurrenceDate(task) {
+    if (!task) return "";
+    if (task.week_start && this._weekdayKeys().some((day) => day.key === task.column)) {
+      return this._dateForWeekStartAndColumn(task.week_start, task.column);
+    }
+    return "";
   }
 
   _openSettingsModal() {
@@ -837,7 +853,6 @@ class HouseholdChoresCard extends HTMLElement {
     const next = JSON.parse(JSON.stringify(this._settingsForm || this._defaultSettings()));
     next.theme = ["light", "dark", "colorful"].includes(next.theme) ? next.theme : "light";
     this._board.settings = next;
-    this._logActivity("Settings updated");
     this._showSettingsModal = false;
     this._render();
     await this._saveBoard();
@@ -866,7 +881,6 @@ class HouseholdChoresCard extends HTMLElement {
       this._board = this._normalizeBoard(parsed);
       this._setPersonFilter(this._personFilter);
       this._clearUndo();
-      this._logActivity("Board imported");
       this._dataExportText = JSON.stringify(this._board, null, 2);
       this._dataImportText = "";
       this._dataImportError = "";
@@ -920,7 +934,6 @@ class HouseholdChoresCard extends HTMLElement {
     this._newPersonName = "";
     this._newPersonRole = "adult";
     this._newPersonColor = this._suggestPersonColor();
-    this._logActivity(`Person added: ${name}`);
     this._closePeopleModal();
     await this._saveBoard();
   }
@@ -935,7 +948,6 @@ class HouseholdChoresCard extends HTMLElement {
       return { ...person, role: nextRole };
     });
     if (!changed) return;
-    this._logActivity("Person role changed");
     this._render();
     await this._saveBoard();
   }
@@ -951,7 +963,6 @@ class HouseholdChoresCard extends HTMLElement {
       return { ...person, color: nextColor };
     });
     if (!changed) return;
-    this._logActivity("Person color changed");
     this._render();
     await this._saveBoard();
   }
@@ -976,7 +987,6 @@ class HouseholdChoresCard extends HTMLElement {
       ...tpl,
       assignees: tpl.assignees.filter((id) => id !== personId),
     }));
-    this._logActivity("Person deleted");
     this._setUndo("Person deleted", snapshot);
     this._render();
     await this._saveBoard();
@@ -986,6 +996,12 @@ class HouseholdChoresCard extends HTMLElement {
     this._taskForm = { ...this._taskForm, [field]: value };
     this._recalcTaskFormDirty();
     this._updateSubmitButtons();
+  }
+
+  _onTaskDeleteSeriesInput(checked) {
+    this._taskForm = { ...this._taskForm, deleteSeries: Boolean(checked) };
+    this._recalcTaskFormDirty();
+    this._render();
   }
 
   _cloneTaskForm(form) {
@@ -1004,6 +1020,7 @@ class HouseholdChoresCard extends HTMLElement {
       column: form.column || "backlog",
       weekdays: [...(form.weekdays || [])].sort(),
       assignees: [...(form.assignees || [])].sort(),
+      deleteSeries: Boolean(form.deleteSeries),
     };
   }
 
@@ -1096,6 +1113,7 @@ class HouseholdChoresCard extends HTMLElement {
       const dayIso = this._toIsoDate(dayDate);
       if (dayIso < todayIso) continue;
       if (dayIso > template.end_date) continue;
+      if (Array.isArray(template.excluded_dates) && template.excluded_dates.includes(dayIso)) continue;
       items.push({
         id: `task_${Math.random().toString(36).slice(2, 10)}`,
         title,
@@ -1163,6 +1181,7 @@ class HouseholdChoresCard extends HTMLElement {
         assignees: [...form.assignees],
         end_date: form.endDate,
         weekdays: [...form.weekdays],
+        excluded_dates: [],
         created_at: new Date().toISOString(),
       };
       const instances = this._buildFixedInstancesForCurrentWeek(template, template.title, template.assignees);
@@ -1191,7 +1210,6 @@ class HouseholdChoresCard extends HTMLElement {
     }
 
     this._reindexAllColumns();
-    this._logActivity(`Task created: ${form.title.trim()}`);
     this._closeTaskModal();
     await this._saveBoard();
   }
@@ -1205,6 +1223,7 @@ class HouseholdChoresCard extends HTMLElement {
     const baseTemplateId = original?.template_id || templateRef?.id || "";
     const originalCreatedAt = original?.created_at || templateRef?.created_at || new Date().toISOString();
     const originalWeekNumber = original?.week_number || this._weekNumberForOffset(this._weekOffset);
+    const existingExcludedDates = Array.isArray(templateRef?.excluded_dates) ? [...templateRef.excluded_dates] : [];
 
     if (effectiveFixed) {
       if (!form.endDate || !form.weekdays.length) {
@@ -1233,6 +1252,7 @@ class HouseholdChoresCard extends HTMLElement {
         assignees: [...form.assignees],
         end_date: form.endDate,
         weekdays: [...form.weekdays],
+        excluded_dates: existingExcludedDates,
         created_at: new Date().toISOString(),
       };
       const instances = this._buildFixedInstancesForCurrentWeek(template, template.title, template.assignees);
@@ -1268,7 +1288,6 @@ class HouseholdChoresCard extends HTMLElement {
     }
 
     this._reindexAllColumns();
-    this._logActivity(`Task updated: ${form.title.trim()}`);
     this._closeTaskModal();
     await this._saveBoard();
   }
@@ -1289,45 +1308,30 @@ class HouseholdChoresCard extends HTMLElement {
 
     const templateId = task?.template_id || form.templateId || "";
     if (templateId) {
-      this._board.templates = this._board.templates.filter((tpl) => tpl.id !== templateId);
-      this._board.tasks = this._board.tasks.filter((t) => t.template_id !== templateId);
+      if (form.deleteSeries) {
+        this._board.templates = this._board.templates.filter((tpl) => tpl.id !== templateId);
+        this._board.tasks = this._board.tasks.filter((t) => t.template_id !== templateId);
+      } else {
+        const occurrenceDate = form.occurrenceDate || this._taskOccurrenceDate(task);
+        this._board.templates = this._board.templates.map((tpl) => {
+          if (tpl.id !== templateId) return tpl;
+          const excluded = new Set(Array.isArray(tpl.excluded_dates) ? tpl.excluded_dates : []);
+          if (occurrenceDate) excluded.add(occurrenceDate);
+          return { ...tpl, excluded_dates: [...excluded].sort() };
+        });
+        this._board.tasks = this._board.tasks.filter((t) => {
+          if (t.template_id !== templateId) return true;
+          if (!occurrenceDate) return false;
+          return this._taskOccurrenceDate(t) !== occurrenceDate;
+        });
+      }
     } else {
       this._board.tasks = this._board.tasks.filter((t) => t.id !== task.id);
     }
 
     this._reindexAllColumns();
-    this._logActivity("Task deleted");
     this._closeTaskModal();
     this._setUndo("Task deleted", snapshot);
-    await this._saveBoard();
-  }
-
-  async _quickMoveTaskToDone(taskId) {
-    const task = this._board.tasks.find((item) => item.id === taskId);
-    if (!task || task.virtual || task.column === "done") return;
-    const snapshot = this._snapshotBoard();
-    task.column = "done";
-    task.week_start = this._weekStartIso(this._weekOffset);
-    task.week_number = this._weekNumberForOffset(this._weekOffset);
-    this._reindexAllColumns();
-    this._logActivity("Task moved to Done");
-    this._setUndo("Task moved to Done", snapshot);
-    this._render();
-    await this._saveBoard();
-  }
-
-  async _deleteTaskFromCard(taskId, templateId = "") {
-    const snapshot = this._snapshotBoard();
-    if (templateId) {
-      this._board.templates = this._board.templates.filter((tpl) => tpl.id !== templateId);
-      this._board.tasks = this._board.tasks.filter((task) => task.template_id !== templateId);
-    } else {
-      this._board.tasks = this._board.tasks.filter((task) => task.id !== taskId);
-    }
-    this._reindexAllColumns();
-    this._logActivity("Task deleted");
-    this._setUndo("Task deleted", snapshot);
-    this._render();
     await this._saveBoard();
   }
 
@@ -1394,11 +1398,7 @@ class HouseholdChoresCard extends HTMLElement {
     return `
       <article class="task ${task.virtual ? "virtual-task" : ""} ${task.fixed ? "fixed-task" : ""}" draggable="${draggable ? "true" : "false"}" data-task-id="${task.id}" data-template-id="${task.template_id || ""}" data-column="${task.column || ""}" data-virtual="${task.virtual ? "1" : "0"}">
         <div class="task-head">
-          <div class="task-title">${this._escape(task.title)}</div>
-          <div class="task-actions">
-            ${!task.virtual && task.column !== "done" ? `<button class="task-quick-done" type="button" data-task-done-id="${task.id}" title="Move to Done">Done</button>` : ""}
-            <button class="task-delete-inline" type="button" data-task-delete-id="${task.id}" data-task-delete-template-id="${task.template_id || ""}" title="Delete task">Del</button>
-          </div>
+          <div class="task-title">${task.fixed ? '<span class="fixed-badge">FX</span>' : ""}${this._escape(task.title)}</div>
         </div>
         ${this._taskMetaLine(task)}
         <div class="task-meta">${this._assigneeChips(task)}</div>
@@ -1469,24 +1469,6 @@ class HouseholdChoresCard extends HTMLElement {
     `;
   }
 
-  _renderActivityPanel() {
-    const items = Array.isArray(this._board.activity) ? this._board.activity.slice(0, 8) : [];
-    if (!items.length) return `<div class="small">No activity yet</div>`;
-    return `
-      <div class="activity-list">
-        ${items
-          .map((item) => {
-            const at = item?.at ? new Date(item.at) : null;
-            const time = at && !Number.isNaN(at.getTime())
-              ? new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }).format(at)
-              : "";
-            return `<div class="activity-item"><span>${this._escape(item?.message || "")}</span><small>${this._escape(time)}</small></div>`;
-          })
-          .join("")}
-      </div>
-    `;
-  }
-
   _renderWeekdaySelector(selected) {
     return `
       <div class="weekday-picks">
@@ -1524,6 +1506,7 @@ class HouseholdChoresCard extends HTMLElement {
                 .join("")}
             </div>
             <div class="small">Without fixed: selected weekdays create one-off tasks for this week and do not require end date.</div>
+            ${form.mode === "edit" && form.templateId ? `<label class="delete-series"><input id="task-delete-series" type="checkbox" ${form.deleteSeries ? "checked" : ""} /> Delete entire fixed series</label><div class="small">Unchecked = delete only this week occurrence.</div>` : ""}
             <div class="modal-actions">
               ${form.mode === "edit" ? '<button type="button" class="danger" id="delete-task">Delete</button>' : ""}
               <button id="task-submit" type="submit" ${this._canSubmitTaskForm() ? "" : "disabled"}>${this._saving ? "Saving..." : form.mode === "edit" ? "Save" : "Create"}</button>
@@ -1707,12 +1690,10 @@ class HouseholdChoresCard extends HTMLElement {
         .tasks{display:grid;gap:6px;align-content:start}
         .task{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:7px;cursor:grab;user-select:none}
         .task.virtual-task{cursor:default;opacity:.96}
-        .task.fixed-task{background:#e2e8f0;border-color:#cbd5e1}
+        .task.fixed-task{background:#dce6f5;border-color:#9fb4d3}
         .task-head{display:flex;align-items:flex-start;justify-content:space-between;gap:6px}
         .task-title{font-size:.78rem;font-weight:600;line-height:1.25}
-        .task-actions{display:flex;align-items:center;gap:4px}
-        .task-quick-done{padding:3px 6px;border-radius:8px;border:1px solid #86efac;background:#dcfce7;color:#166534;font-size:.7rem;font-weight:700;cursor:pointer}
-        .task-delete-inline{padding:3px 6px;border-radius:8px;border:1px solid #fecaca;background:#fee2e2;color:#991b1b;font-size:.7rem;font-weight:700;cursor:pointer}
+        .fixed-badge{display:inline-flex;align-items:center;justify-content:center;padding:1px 6px;margin-right:6px;border-radius:999px;background:#1e3a8a;color:#fff;font-size:.62rem;font-weight:800;letter-spacing:.02em;vertical-align:middle}
         .task-sub{margin-top:4px;color:#64748b;font-size:.73rem}
         .task-meta{margin-top:6px;display:flex;gap:4px;flex-wrap:wrap}
         .empty-wrap{display:grid;gap:6px;align-content:start}
@@ -1747,6 +1728,7 @@ class HouseholdChoresCard extends HTMLElement {
         .assignees{display:flex;flex-wrap:wrap;gap:8px}
         .assignees label{display:flex;align-items:center;gap:5px;font-size:.78rem}
         .modal-actions{display:flex;justify-content:space-between;gap:8px}
+        .delete-series{display:flex;align-items:center;gap:6px;font-size:.8rem;color:#334155}
         .danger{background:#b91c1c;color:#fff;border-color:transparent}
         .settings-form{gap:12px}
         .settings-section{border:1px solid #dbe3ef;border-radius:12px;padding:10px;background:#f8fafc}
@@ -1758,11 +1740,6 @@ class HouseholdChoresCard extends HTMLElement {
         .settings-inline{display:flex;align-items:center;gap:8px}
         textarea{font:inherit;border-radius:10px;border:1px solid var(--hc-border);padding:8px 10px;background:#fff;color:var(--hc-text);resize:vertical;min-height:80px}
         #settings-submit{margin-left:auto;background:#2563eb;color:#fff;border-color:#1d4ed8;font-weight:700}
-        .activity{background:var(--hc-card);border:1px solid var(--hc-border);border-radius:12px;padding:8px}
-        .activity h3{margin:0 0 8px;font-size:.82rem}
-        .activity-list{display:grid;gap:6px}
-        .activity-item{display:flex;justify-content:space-between;gap:8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:6px 8px;font-size:.78rem}
-        .activity-item small{color:#64748b;white-space:nowrap}
         @media (max-width:900px){
           .side-columns{grid-template-columns:1fr}
           .column h3{font-size:.76rem}
@@ -1827,7 +1804,6 @@ class HouseholdChoresCard extends HTMLElement {
           <div class="columns-wrap">
             <div class="week-scroll"><div class="week-columns">${this._weekColumns().map((col) => this._renderColumn(col)).join("")}</div></div>
             <div class="side-columns">${this._renderColumn({ key: "backlog", label: "Backlog" })}${this._renderColumn({ key: "done", label: "Done" })}</div>
-            <section class="activity"><h3>Activity</h3>${this._renderActivityPanel()}</section>
           </div>
         </div>
       </ha-card>
@@ -1868,6 +1844,7 @@ class HouseholdChoresCard extends HTMLElement {
     const taskColumnInput = this.shadowRoot.querySelector("#task-column");
     const taskEndDateInput = this.shadowRoot.querySelector("#task-end-date");
     const taskFixedInput = this.shadowRoot.querySelector("#task-fixed");
+    const taskDeleteSeriesInput = this.shadowRoot.querySelector("#task-delete-series");
     const deleteTaskBtn = this.shadowRoot.querySelector("#delete-task");
     const closeSettingsBtn = this.shadowRoot.querySelector("#close-settings");
     const deletePersonButtons = this.shadowRoot.querySelectorAll("[data-delete-person-id]");
@@ -1931,6 +1908,7 @@ class HouseholdChoresCard extends HTMLElement {
         this._render();
       });
     }
+    if (taskDeleteSeriesInput) taskDeleteSeriesInput.addEventListener("change", (ev) => this._onTaskDeleteSeriesInput(ev.target.checked));
     if (deleteTaskBtn) deleteTaskBtn.addEventListener("click", () => this._onDeleteTask());
     deletePersonButtons.forEach((btn) => {
       btn.addEventListener("click", () => this._onDeletePerson(btn.dataset.deletePersonId));
@@ -2005,20 +1983,6 @@ class HouseholdChoresCard extends HTMLElement {
 
         this._render();
         await this._saveBoard();
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("[data-task-done-id]").forEach((btn) => {
-      btn.addEventListener("click", async (ev) => {
-        ev.stopPropagation();
-        await this._quickMoveTaskToDone(btn.dataset.taskDoneId);
-      });
-    });
-
-    this.shadowRoot.querySelectorAll("[data-task-delete-id]").forEach((btn) => {
-      btn.addEventListener("click", async (ev) => {
-        ev.stopPropagation();
-        await this._deleteTaskFromCard(btn.dataset.taskDeleteId, btn.dataset.taskDeleteTemplateId || "");
       });
     });
 
