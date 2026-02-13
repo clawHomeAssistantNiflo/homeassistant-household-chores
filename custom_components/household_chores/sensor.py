@@ -165,6 +165,7 @@ class PersonWeekTasksSensor(SensorEntity):
 
     _attr_icon = "mdi:account-check"
     _attr_has_entity_name = False
+    _attr_should_poll = True
 
     def __init__(self, entry: ConfigEntry, board_store: Any, person_id: str) -> None:
         self._entry = entry
@@ -185,6 +186,7 @@ class PersonWeekTasksSensor(SensorEntity):
             f"{SIGNAL_BOARD_UPDATED}_{self._entry.entry_id}",
             self._handle_board_updated,
         )
+        await self.async_update()
 
     async def async_will_remove_from_hass(self) -> None:
         """Unsubscribe from events."""
@@ -222,11 +224,22 @@ class PersonWeekTasksSensor(SensorEntity):
 
     def _handle_board_updated(self) -> None:
         """Handle board updates from store."""
-        self._refresh_from_board()
+        self.hass.async_create_task(self._async_refresh_and_write())
+
+    async def _async_refresh_and_write(self) -> None:
+        await self.async_update()
         self.async_write_ha_state()
 
-    def _refresh_from_board(self) -> None:
-        board = getattr(self._board_store, "_data", None) or {}
+    async def async_update(self) -> None:
+        """Refresh from the latest persisted board."""
+        try:
+            board = await self._board_store.async_load()
+        except Exception:  # noqa: BLE001
+            board = getattr(self._board_store, "_data", None) or {}
+        self._refresh_from_board(board)
+
+    def _refresh_from_board(self, board: dict[str, Any] | None = None) -> None:
+        board = board or getattr(self._board_store, "_data", None) or {}
         stats = person_week_stats(board, self.person_id, week_offset=0)
         self._stats = stats
         people = board.get("people", []) if isinstance(board, dict) else []

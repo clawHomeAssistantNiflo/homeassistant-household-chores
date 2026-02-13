@@ -54,13 +54,24 @@ def person_week_stats(board: dict[str, Any], person_id: str, week_offset: int = 
         if str(person.get("id", "")) == str(person_id):
             person_name = str(person.get("name", "")).strip()
             break
+    person_name_key = person_name.strip().lower()
+
+    def _normalize_assignee(value: Any) -> str:
+        if isinstance(value, dict):
+            candidate = value.get("id", "") or value.get("person_id", "") or value.get("name", "")
+            return str(candidate).strip()
+        return str(value or "").strip()
 
     by_key: dict[str, dict[str, Any]] = {}
     for raw in tasks:
         if not isinstance(raw, dict):
             continue
-        assignees = [str(item) for item in raw.get("assignees", [])]
-        if str(person_id) not in assignees:
+        assignees = [_normalize_assignee(item) for item in raw.get("assignees", [])]
+        assignees_lower = [item.lower() for item in assignees]
+        if (
+            str(person_id) not in assignees
+            and person_name_key not in assignees_lower
+        ):
             continue
 
         column = str(raw.get("column") or "monday").lower()
@@ -128,4 +139,3 @@ def person_week_stats(board: dict[str, Any], person_id: str, week_offset: int = 
         "upcoming": upcoming_count,
         "tasks": rows,
     }
-
