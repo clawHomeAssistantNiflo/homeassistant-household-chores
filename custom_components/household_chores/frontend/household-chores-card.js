@@ -31,6 +31,9 @@ class HouseholdChoresCard extends HTMLElement {
     this._personFilter = "all";
     this._undoState = null;
     this._undoTimer = null;
+    this._dataExportText = "";
+    this._dataImportText = "";
+    this._dataImportError = "";
 
     this._taskForm = this._emptyTaskForm("add");
     this._settingsForm = this._emptySettingsForm();
@@ -351,6 +354,7 @@ class HouseholdChoresCard extends HTMLElement {
           ...(settings.done_cleanup || {}),
         },
       },
+      activity: Array.isArray(board?.activity) ? board.activity.filter((item) => item && typeof item === "object").slice(0, 50) : [],
     };
   }
 
@@ -394,6 +398,13 @@ class HouseholdChoresCard extends HTMLElement {
       return;
     }
     this._personFilter = value;
+  }
+
+  _logActivity(message) {
+    const msg = String(message || "").trim();
+    if (!msg) return;
+    const next = [{ at: new Date().toISOString(), message: msg }, ...(Array.isArray(this._board.activity) ? this._board.activity : [])];
+    this._board.activity = next.slice(0, 50);
   }
 
   _tasksVisibleByFilter(tasks) {
@@ -675,6 +686,9 @@ class HouseholdChoresCard extends HTMLElement {
 
   _openSettingsModal() {
     this._settingsForm = this._emptySettingsForm();
+    this._dataExportText = JSON.stringify(this._board, null, 2);
+    this._dataImportText = "";
+    this._dataImportError = "";
     this._showSettingsModal = true;
     this._render();
   }
@@ -701,9 +715,60 @@ class HouseholdChoresCard extends HTMLElement {
     const next = JSON.parse(JSON.stringify(this._settingsForm || this._defaultSettings()));
     next.theme = ["light", "dark", "colorful"].includes(next.theme) ? next.theme : "light";
     this._board.settings = next;
+    this._logActivity("Settings updated");
     this._showSettingsModal = false;
     this._render();
     await this._saveBoard();
+  }
+
+  _onImportBoardInput(ev) {
+    this._dataImportText = ev.target.value || "";
+    this._dataImportError = "";
+  }
+
+  _canImportBoard() {
+    return Boolean((this._dataImportText || "").trim());
+  }
+
+  async _onImportBoard(ev) {
+    ev.preventDefault();
+    const raw = (this._dataImportText || "").trim();
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") {
+        this._dataImportError = "Import must be a JSON object.";
+        this._render();
+        return;
+      }
+      this._board = this._normalizeBoard(parsed);
+      this._setPersonFilter(this._personFilter);
+      this._clearUndo();
+      this._logActivity("Board imported");
+      this._dataExportText = JSON.stringify(this._board, null, 2);
+      this._dataImportText = "";
+      this._dataImportError = "";
+      this._render();
+      await this._saveBoard();
+    } catch (_err) {
+      this._dataImportError = "Invalid JSON import payload.";
+      this._render();
+    }
+  }
+
+  async _onCopyExportJson() {
+    const text = this._dataExportText || JSON.stringify(this._board, null, 2);
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        this._dataImportError = "";
+      } else {
+        this._dataImportError = "Clipboard API unavailable in this browser.";
+      }
+    } catch (_err) {
+      this._dataImportError = "Unable to copy export JSON.";
+    }
+    this._render();
   }
 
   _onPersonNameInput(ev) {
@@ -733,6 +798,7 @@ class HouseholdChoresCard extends HTMLElement {
     this._newPersonName = "";
     this._newPersonRole = "adult";
     this._newPersonColor = this._suggestPersonColor();
+    this._logActivity(`Person added: ${name}`);
     this._closePeopleModal();
     await this._saveBoard();
   }
@@ -747,6 +813,7 @@ class HouseholdChoresCard extends HTMLElement {
       return { ...person, role: nextRole };
     });
     if (!changed) return;
+    this._logActivity("Person role changed");
     this._render();
     await this._saveBoard();
   }
@@ -762,6 +829,7 @@ class HouseholdChoresCard extends HTMLElement {
       return { ...person, color: nextColor };
     });
     if (!changed) return;
+    this._logActivity("Person color changed");
     this._render();
     await this._saveBoard();
   }
@@ -786,6 +854,7 @@ class HouseholdChoresCard extends HTMLElement {
       ...tpl,
       assignees: tpl.assignees.filter((id) => id !== personId),
     }));
+    this._logActivity("Person deleted");
     this._setUndo("Person deleted", snapshot);
     this._render();
     await this._saveBoard();
@@ -1000,6 +1069,7 @@ class HouseholdChoresCard extends HTMLElement {
     }
 
     this._reindexAllColumns();
+    this._logActivity(`Task created: ${form.title.trim()}`);
     this._closeTaskModal();
     await this._saveBoard();
   }
@@ -1072,6 +1142,7 @@ class HouseholdChoresCard extends HTMLElement {
     }
 
     this._reindexAllColumns();
+    this._logActivity(`Task updated: ${form.title.trim()}`);
     this._closeTaskModal();
     await this._saveBoard();
   }
@@ -1098,6 +1169,7 @@ class HouseholdChoresCard extends HTMLElement {
     }
 
     this._reindexAllColumns();
+    this._logActivity("Task deleted");
     this._closeTaskModal();
     this._setUndo("Task deleted", snapshot);
     await this._saveBoard();
@@ -1111,6 +1183,7 @@ class HouseholdChoresCard extends HTMLElement {
     task.week_start = this._weekStartIso(this._weekOffset);
     task.week_number = this._weekNumberForOffset(this._weekOffset);
     this._reindexAllColumns();
+    this._logActivity("Task moved to Done");
     this._setUndo("Task moved to Done", snapshot);
     this._render();
     await this._saveBoard();
@@ -1251,6 +1324,24 @@ class HouseholdChoresCard extends HTMLElement {
     `;
   }
 
+  _renderActivityPanel() {
+    const items = Array.isArray(this._board.activity) ? this._board.activity.slice(0, 8) : [];
+    if (!items.length) return `<div class="small">No activity yet</div>`;
+    return `
+      <div class="activity-list">
+        ${items
+          .map((item) => {
+            const at = item?.at ? new Date(item.at) : null;
+            const time = at && !Number.isNaN(at.getTime())
+              ? new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }).format(at)
+              : "";
+            return `<div class="activity-item"><span>${this._escape(item?.message || "")}</span><small>${this._escape(time)}</small></div>`;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
   _renderWeekdaySelector(selected) {
     return `
       <div class="weekday-picks">
@@ -1383,6 +1474,25 @@ class HouseholdChoresCard extends HTMLElement {
                 <input id="settings-cleanup-minute" data-focus-key="settings-cleanup-minute" type="number" min="0" max="59" value="${this._escape(form.done_cleanup?.minute ?? 0)}" />
               </div>
             </section>
+
+            <section class="settings-section">
+              <h4>Data Backup</h4>
+              <label class="settings-field">
+                <span>Export JSON</span>
+                <textarea id="settings-export-json" readonly rows="6">${this._escape(this._dataExportText || JSON.stringify(this._board, null, 2))}</textarea>
+              </label>
+              <div class="settings-inline">
+                <button type="button" id="copy-export-json">Copy export</button>
+              </div>
+              <label class="settings-field">
+                <span>Import JSON</span>
+                <textarea id="settings-import-json" rows="6" placeholder="Paste board JSON here">${this._escape(this._dataImportText || "")}</textarea>
+              </label>
+              ${this._dataImportError ? `<div class="error">${this._escape(this._dataImportError)}</div>` : ""}
+              <div class="settings-inline">
+                <button type="button" id="import-board-json" ${this._canImportBoard() ? "" : "disabled"}>Import board</button>
+              </div>
+            </section>
             <div class="modal-actions">
               <button type="submit" id="settings-submit">Save settings</button>
             </div>
@@ -1498,7 +1608,13 @@ class HouseholdChoresCard extends HTMLElement {
         .settings-field{display:grid;gap:4px;font-size:.78rem;color:#475569}
         .settings-field span{font-weight:600}
         .settings-inline{display:flex;align-items:center;gap:8px}
+        textarea{font:inherit;border-radius:10px;border:1px solid var(--hc-border);padding:8px 10px;background:#fff;color:var(--hc-text);resize:vertical;min-height:80px}
         #settings-submit{margin-left:auto;background:#2563eb;color:#fff;border-color:#1d4ed8;font-weight:700}
+        .activity{background:var(--hc-card);border:1px solid var(--hc-border);border-radius:12px;padding:8px}
+        .activity h3{margin:0 0 8px;font-size:.82rem}
+        .activity-list{display:grid;gap:6px}
+        .activity-item{display:flex;justify-content:space-between;gap:8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:6px 8px;font-size:.78rem}
+        .activity-item small{color:#64748b;white-space:nowrap}
         @media (max-width:900px){
           .side-columns{grid-template-columns:1fr}
           .column h3{font-size:.76rem}
@@ -1563,6 +1679,7 @@ class HouseholdChoresCard extends HTMLElement {
           <div class="columns-wrap">
             <div class="week-scroll"><div class="week-columns">${this._weekColumns().map((col) => this._renderColumn(col)).join("")}</div></div>
             <div class="side-columns">${this._renderColumn({ key: "backlog", label: "Backlog" })}${this._renderColumn({ key: "done", label: "Done" })}</div>
+            <section class="activity"><h3>Activity</h3>${this._renderActivityPanel()}</section>
           </div>
         </div>
       </ha-card>
@@ -1593,6 +1710,10 @@ class HouseholdChoresCard extends HTMLElement {
     const settingsRefreshMinute = this.shadowRoot.querySelector("#settings-refresh-minute");
     const settingsCleanupHour = this.shadowRoot.querySelector("#settings-cleanup-hour");
     const settingsCleanupMinute = this.shadowRoot.querySelector("#settings-cleanup-minute");
+    const settingsExportJson = this.shadowRoot.querySelector("#settings-export-json");
+    const settingsImportJson = this.shadowRoot.querySelector("#settings-import-json");
+    const copyExportJsonBtn = this.shadowRoot.querySelector("#copy-export-json");
+    const importBoardJsonBtn = this.shadowRoot.querySelector("#import-board-json");
     const settingsLabelInputs = this.shadowRoot.querySelectorAll("[data-label-key]");
     const taskForm = this.shadowRoot.querySelector("#task-form");
     const taskTitleInput = this.shadowRoot.querySelector("#task-title");
@@ -1643,6 +1764,10 @@ class HouseholdChoresCard extends HTMLElement {
     if (settingsRefreshMinute) settingsRefreshMinute.addEventListener("input", (ev) => this._onSettingsFieldInput(["weekly_refresh", "minute"], Number(ev.target.value)));
     if (settingsCleanupHour) settingsCleanupHour.addEventListener("input", (ev) => this._onSettingsFieldInput(["done_cleanup", "hour"], Number(ev.target.value)));
     if (settingsCleanupMinute) settingsCleanupMinute.addEventListener("input", (ev) => this._onSettingsFieldInput(["done_cleanup", "minute"], Number(ev.target.value)));
+    if (settingsImportJson) settingsImportJson.addEventListener("input", (ev) => this._onImportBoardInput(ev));
+    if (copyExportJsonBtn) copyExportJsonBtn.addEventListener("click", async () => this._onCopyExportJson());
+    if (importBoardJsonBtn) importBoardJsonBtn.addEventListener("click", async (ev) => this._onImportBoard(ev));
+    if (settingsExportJson) settingsExportJson.addEventListener("focus", (ev) => ev.target.select());
     settingsLabelInputs.forEach((input) => {
       input.addEventListener("input", (ev) => this._onSettingsFieldInput(["labels", input.dataset.labelKey], ev.target.value));
     });
