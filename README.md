@@ -39,6 +39,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Fixed recurring tasks shown in future weeks are now editable/deletable via template modal
 - Fixed task cards use a darker style and hide end-date text on-card
 - Inline delete action is available directly on all task cards
+- Backlog/Done lanes default to a compact single-row height on tablet/desktop
 - `Add` / `Create` buttons stay disabled (grey) until title/name input is filled
 - `Save` stays disabled when opening an existing task, and only enables after a real change
 - Assignee changes in Edit task now correctly enable `Save`

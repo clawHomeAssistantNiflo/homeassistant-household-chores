@@ -1696,7 +1696,7 @@ class HouseholdChoresCard extends HTMLElement {
         .column{background:var(--hc-card);border:1px solid var(--hc-border);border-radius:12px;padding:8px;display:grid;grid-template-rows:auto 1fr;min-height:220px}
         .week-columns .column.week-lane{min-height:360px;max-height:360px}
         .week-columns .column.week-lane .tasks{max-height:300px;overflow-y:auto;overflow-x:hidden;padding-right:2px}
-        .side-columns .column.side-lane{min-height:132px;max-height:132px}
+        .side-columns .column.side-lane{min-height:96px;max-height:96px}
         .side-columns .column.side-lane .tasks{display:flex;flex-direction:row;align-items:flex-start;overflow-x:auto;overflow-y:hidden;gap:6px;padding-bottom:3px}
         .side-columns .column.side-lane .task{min-width:180px;flex:0 0 180px}
         .column.drag-over{border-color:#2563eb;box-shadow:inset 0 0 0 1px #2563eb;background:#f0f7ff}
@@ -1767,7 +1767,7 @@ class HouseholdChoresCard extends HTMLElement {
           .side-columns{grid-template-columns:1fr}
           .column h3{font-size:.76rem}
           .task-title{font-size:.73rem}
-          .side-columns .column.side-lane{min-height:150px;max-height:150px}
+          .side-columns .column.side-lane{min-height:110px;max-height:110px}
           .side-columns .column.side-lane .tasks{
             display:grid;
             grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
