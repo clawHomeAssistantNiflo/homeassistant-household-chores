@@ -2305,8 +2305,7 @@ class HouseholdChoresCard extends HTMLElement {
         .wrap{display:grid;gap:8px;padding:8px 12px 12px}
         .board-title{margin:0;padding:0;font-size:1.55rem;line-height:1.1;font-weight:600;letter-spacing:-.01em;color:var(--hc-text)}
         .panel{background:var(--hc-card);border:1px solid var(--hc-border);border-radius:14px;padding:10px}
-        .top-row{display:grid;grid-template-columns:auto minmax(220px,1fr) auto;align-items:center;gap:8px}
-        .top-middle{min-width:0}
+        .top-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px}
         .assignee-filter{display:flex;align-items:center;gap:6px}
         .assignee-filter label{font-size:.74rem;color:#64748b;font-weight:600}
         .assignee-filter select{padding:6px 8px;min-width:120px;height:34px}
@@ -2495,7 +2494,6 @@ class HouseholdChoresCard extends HTMLElement {
         .settings-advanced[open] summary{margin-bottom:8px}
         @media (max-width:900px){
           .top-row{grid-template-columns:1fr}
-          .top-middle{order:2}
           .header-actions{justify-content:space-between}
           .assignee-filter{flex-wrap:wrap}
           .side-columns{grid-template-columns:1fr}
@@ -2540,19 +2538,6 @@ class HouseholdChoresCard extends HTMLElement {
                 </div>
                 <button class="week-nav-btn" type="button" id="week-next" ${this._weekOffset >= this._maxWeekOffset ? "disabled" : ""}>▶</button>
               </div>
-              <div class="top-middle">
-                <div class="people-strip" id="open-people" role="button" tabindex="0" aria-label="Open people">
-                  <span class="people-strip-label">People</span>
-                  ${
-                    this._board.people.length
-                      ? this._board.people
-                          .slice(0, 12)
-                          .map((person) => `<span class="person-pill"><span class="chip-wrap"><span class="chip" draggable="true" data-person-id="${person.id}" style="background:${person.color}" title="${this._escape(person.name)}">${this._personInitial(person.name)}</span><span class="role-badge ${person.role === "child" ? "child" : "adult"}">${this._personRoleLabel(person.role)}</span></span><span>${this._escape(person.name)}</span></span>`)
-                          .join("")
-                      : `<span class="people-strip-empty">Tap to add people</span>`
-                  }
-                </div>
-              </div>
               <div class="header-actions">
                 <div class="swipe-hint">Swipe left/right (0..+3)</div>
                 ${this._renderActiveFilterChip()}
@@ -2562,6 +2547,17 @@ class HouseholdChoresCard extends HTMLElement {
             </div>
             ${this._renderOnboardingBanner()}
             ${this._renderUpcomingStrip()}
+            <div class="people-strip" id="open-people" role="button" tabindex="0" aria-label="Open people">
+              <span class="people-strip-label">People</span>
+              ${
+                this._board.people.length
+                  ? this._board.people
+                      .slice(0, 12)
+                      .map((person) => `<span class="person-pill"><span class="chip-wrap"><span class="chip" draggable="true" data-person-id="${person.id}" style="background:${person.color}" title="${this._escape(person.name)}">${this._personInitial(person.name)}</span><span class="role-badge ${person.role === "child" ? "child" : "adult"}">${this._personRoleLabel(person.role)}</span></span><span>${this._escape(person.name)}</span></span>`)
+                      .join("")
+                  : `<span class="people-strip-empty">Tap to add people</span>`
+              }
+            </div>
             ${this._renderQuickTemplatesBar()}
           </div>
 
