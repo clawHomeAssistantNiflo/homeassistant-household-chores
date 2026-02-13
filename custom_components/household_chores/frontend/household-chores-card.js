@@ -1808,23 +1808,26 @@ class HouseholdChoresCard extends HTMLElement {
   _taskMetaLine(task) {
     if (task.fixed) return "";
     const bits = [];
-    if (task.span_id) bits.push("all-day");
     if (task.end_date) bits.push(`until ${task.end_date}`);
     return bits.length ? `<div class="task-sub">${this._escape(bits.join(" • "))}</div>` : "";
   }
 
   _renderTaskCard(task) {
     const draggable = !task.virtual && !task.span_id;
+    const isSpan = Boolean(task.span_id);
+    const isSpanStart = isSpan && Number(task.span_index) === 0;
+    const isSpanEnd = isSpan && Number(task.span_total) > 0 && Number(task.span_index) === Number(task.span_total) - 1;
+    const showContent = !isSpan || isSpanStart;
     const spanClass = task.span_id
-      ? ` span-task ${task.span_index === 0 ? "span-start" : ""} ${task.span_index === task.span_total - 1 ? "span-end" : ""} ${task.span_index > 0 && task.span_index < task.span_total - 1 ? "span-mid" : ""}`
+      ? ` span-task ${isSpanStart ? "span-start" : ""} ${isSpanEnd ? "span-end" : ""} ${!isSpanStart && !isSpanEnd ? "span-mid" : ""}`
       : "";
     return `
       <article class="task ${task.virtual ? "virtual-task" : ""} ${task.fixed ? "fixed-task" : ""}${spanClass}" draggable="${draggable ? "true" : "false"}" data-task-id="${task.id}" data-template-id="${task.template_id || ""}" data-column="${task.column || ""}" data-virtual="${task.virtual ? "1" : "0"}">
         <div class="task-head">
-          <div class="task-title">${this._escape(task.title)}</div>
+          <div class="task-title">${showContent ? this._escape(task.title) : "&nbsp;"}</div>
         </div>
-        ${this._taskMetaLine(task)}
-        <div class="task-meta">${this._assigneeChips(task)}</div>
+        ${showContent ? this._taskMetaLine(task) : ""}
+        ${showContent ? `<div class="task-meta">${this._assigneeChips(task)}</div>` : ""}
       </article>
     `;
   }
@@ -1974,10 +1977,10 @@ class HouseholdChoresCard extends HTMLElement {
           <form class="task-form" id="task-form">
             <input id="task-title" type="text" placeholder="Task title" value="${this._escape(form.title)}" />
             <div class="toggle-row">
-              <label><input id="task-fixed" type="checkbox" ${form.fixed ? "checked" : ""} /> Fixed until date</label>
+              <label class="settings-switch"><input id="task-fixed" type="checkbox" ${form.fixed ? "checked" : ""} /><span>Fixed until date</span></label>
+              ${form.fixed ? "" : `<label class="settings-switch"><input id="task-all-day-span" type="checkbox" ${form.allDaySpan ? "checked" : ""} /><span>All-day across selected days</span></label>`}
               <input id="task-end-date" type="date" value="${this._escape(form.endDate)}" />
             </div>
-            ${form.fixed ? "" : `<label class="settings-switch"><input id="task-all-day-span" type="checkbox" ${form.allDaySpan ? "checked" : ""} /><span>All-day across selected days</span></label>`}
             ${this._renderWeekdaySelector(form.weekdays)}
             ${showWeekdayMode ? "" : `<select id="task-column">${this._columns().map((c) => `<option value="${c.key}" ${form.column === c.key ? "selected" : ""}>${this._escape(this._labelForColumn(c.key))}</option>`).join("")}</select>`}
             <div class="assignees">
@@ -2236,10 +2239,29 @@ class HouseholdChoresCard extends HTMLElement {
         .task{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:7px;cursor:grab;user-select:none}
         .task.virtual-task{cursor:default;opacity:.96}
         .task.fixed-task{background:#ecf3ff;border-color:#b7cdf3;box-shadow:inset 3px 0 0 #3b82f6}
-        .task.span-task{background:#eef2ff;border-color:#c7d2fe;box-shadow:inset 3px 0 0 #4f46e5;cursor:pointer}
-        .task.span-task.span-mid{border-left-color:#818cf8;border-right-color:#818cf8}
-        .task.span-task.span-start{border-left-width:2px}
-        .task.span-task.span-end{border-right-width:2px}
+        .task.span-task{
+          background:#e8f7ef;
+          border-color:#b9e7ce;
+          box-shadow:none;
+          cursor:pointer;
+          padding:4px 8px;
+          min-height:26px;
+          gap:2px;
+        }
+        .task.span-task .task-head{min-height:16px;align-items:center}
+        .task.span-task .task-title{
+          font-size:.74rem;
+          font-weight:600;
+          line-height:1.1;
+          -webkit-line-clamp:1;
+          white-space:nowrap;
+          text-overflow:ellipsis;
+          overflow:hidden;
+        }
+        .task.span-task .task-meta{margin-top:2px}
+        .task.span-task.span-start{border-radius:10px 6px 6px 10px}
+        .task.span-task.span-mid{border-radius:6px}
+        .task.span-task.span-end{border-radius:6px 10px 10px 6px}
         .task.swipe-complete-preview{background:#dcfce7;border-color:#86efac;box-shadow:inset 3px 0 0 #16a34a}
         .task.swipe-delete-preview{background:#fee2e2;border-color:#fca5a5;box-shadow:inset 3px 0 0 #dc2626}
         .task-head{display:flex;align-items:flex-start;justify-content:space-between;gap:6px}
@@ -2284,8 +2306,8 @@ class HouseholdChoresCard extends HTMLElement {
         .person-role-select{min-width:88px;padding:6px 8px;font-size:.74rem}
         .person-color-input{width:40px;height:32px;padding:2px}
         .task-form{margin-top:10px;display:grid;gap:8px}
-        .toggle-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
-        .toggle-row label{display:flex;gap:6px;align-items:center;font-size:.84rem}
+        .toggle-row{display:grid;grid-template-columns:1fr 1fr auto;align-items:center;gap:8px}
+        .toggle-row .settings-switch{justify-self:start}
         .weekday-picks{display:flex;gap:6px;flex-wrap:wrap}
         .weekday-dot{width:28px;height:28px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#334155;padding:0;font-size:.76rem;font-weight:700}
         .weekday-dot.sel{background:#0f766e;border-color:#0f766e;color:#fff}
@@ -2344,6 +2366,7 @@ class HouseholdChoresCard extends HTMLElement {
           .two-col{grid-template-columns:1fr}
           .labels-grid{grid-template-columns:1fr 1fr}
           .legend-list{grid-template-columns:1fr}
+          .toggle-row{grid-template-columns:1fr}
         }
       </style>
 
