@@ -235,6 +235,20 @@ class HouseholdChoresCard extends HTMLElement {
     return { bg, border, text: "#0f172a" };
   }
 
+  _taskCardColors(task) {
+    const fallback = task.fixed
+      ? { bg: "#ecf3ff", border: "#b7cdf3", text: "#0f172a", accent: "#3b82f6" }
+      : { bg: "#f8fafc", border: "#e2e8f0", text: "#0f172a", accent: "#94a3b8" };
+    const ids = Array.isArray(task?.assignees) ? task.assignees : [];
+    if (ids.length !== 1) return fallback;
+    const person = this._board.people.find((p) => p.id === ids[0]);
+    if (!person?.color) return fallback;
+    const border = String(person.color).trim();
+    const bg = this._hexToRgba(border, task.fixed ? 0.18 : 0.13);
+    if (!bg) return fallback;
+    return { bg, border, text: "#0f172a", accent: border };
+  }
+
   _suggestPersonColor() {
     const taken = new Set(this._board.people.map((p) => this._normalizeHexColor(p.color, "")));
     for (const color of this._personColorPresets()) {
@@ -1846,8 +1860,12 @@ class HouseholdChoresCard extends HTMLElement {
     const spanClass = task.span_id
       ? ` span-task ${isSpanStart ? "span-start" : ""} ${isSpanEnd ? "span-end" : ""} ${!isSpanStart && !isSpanEnd ? "span-mid" : ""}`
       : "";
+    const cardColors = isSpan ? null : this._taskCardColors(task);
+    const cardStyle = isSpan
+      ? ""
+      : ` style="--task-bg:${cardColors.bg};--task-border:${cardColors.border};--task-text:${cardColors.text};--task-accent:${cardColors.accent};"`;
     return `
-      <article class="task ${task.virtual ? "virtual-task" : ""} ${task.fixed ? "fixed-task" : ""}${spanClass}" draggable="${draggable ? "true" : "false"}" data-task-id="${task.id}" data-template-id="${task.template_id || ""}" data-column="${task.column || ""}" data-virtual="${task.virtual ? "1" : "0"}">
+      <article class="task ${task.virtual ? "virtual-task" : ""} ${task.fixed ? "fixed-task" : ""}${spanClass}" draggable="${draggable ? "true" : "false"}" data-task-id="${task.id}" data-template-id="${task.template_id || ""}" data-column="${task.column || ""}" data-virtual="${task.virtual ? "1" : "0"}"${cardStyle}>
         <div class="task-head">
           <div class="task-title">${showContent ? this._escape(task.title) : "&nbsp;"}</div>
         </div>
@@ -2416,9 +2434,9 @@ class HouseholdChoresCard extends HTMLElement {
         .col-count{font-size:.76rem;color:#64748b;font-weight:600}
         .col-date{font-size:.68rem;color:#94a3b8;margin-top:2px}
         .tasks{display:grid;gap:6px;align-content:start}
-        .task{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:7px;cursor:grab;user-select:none}
+        .task{background:var(--task-bg,#f8fafc);border:1px solid var(--task-border,#e2e8f0);color:var(--task-text,#0f172a);border-radius:10px;padding:7px;cursor:grab;user-select:none}
         .task.virtual-task{cursor:default;opacity:.96}
-        .task.fixed-task{background:#ecf3ff;border-color:#b7cdf3;box-shadow:inset 3px 0 0 #3b82f6}
+        .task.fixed-task{background:var(--task-bg,#ecf3ff);border-color:var(--task-border,#b7cdf3);box-shadow:inset 3px 0 0 var(--task-accent,#3b82f6)}
         .task.span-task{
           background:var(--span-bg, #e8f7ef);
           border-color:var(--span-border, #b9e7ce);

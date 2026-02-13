@@ -36,6 +36,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Settings modal input focus is preserved while typing (no cursor drop on rerender)
 - Settings UI is redesigned with compact grouped sections and collapsible advanced data tools
 - People with unique colored circular badges and first-letter initials
+- Task color rules: if exactly one person is assigned, the task card inherits that person's color tone; if none or multiple people are assigned, the task keeps its default lane/task-type color
 - People can be marked as `Adult` or `Child` on create, and edited later in the People modal
 - People color is selectable in the People modal (both on create and for existing people)
 - People modal cards now use a compact 2-column layout on tablet/desktop (single column on mobile)
