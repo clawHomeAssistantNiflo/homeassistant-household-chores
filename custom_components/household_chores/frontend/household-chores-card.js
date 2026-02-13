@@ -1105,6 +1105,7 @@ class HouseholdChoresCard extends HTMLElement {
       taskId: taskEl.dataset.taskId || "",
       startX: ev.touches[0].clientX,
       startY: ev.touches[0].clientY,
+      startAt: Date.now(),
       active: true,
       moved: false,
     };
@@ -1117,8 +1118,9 @@ class HouseholdChoresCard extends HTMLElement {
     const gestures = this._board?.settings?.gestures || {};
     const completeEnabled = gestures.swipe_complete !== false;
     const deleteEnabled = Boolean(gestures.swipe_delete);
-    const completeReady = completeEnabled && dx > 54 && Math.abs(dx) > Math.abs(dy);
-    const deleteReady = deleteEnabled && dx < -54 && Math.abs(dx) > Math.abs(dy);
+    const horizontalEnough = Math.abs(dx) > Math.abs(dy) * 1.2;
+    const completeReady = completeEnabled && dx > 58 && horizontalEnough;
+    const deleteReady = deleteEnabled && dx < -58 && horizontalEnough;
     taskEl.classList.toggle("swipe-complete-preview", completeReady);
     taskEl.classList.toggle("swipe-delete-preview", deleteReady);
     if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
@@ -1146,10 +1148,12 @@ class HouseholdChoresCard extends HTMLElement {
     const gestures = this._board?.settings?.gestures || {};
     const completeEnabled = gestures.swipe_complete !== false;
     const deleteEnabled = Boolean(gestures.swipe_delete);
-    if (dx > 70 && Math.abs(dx) > Math.abs(dy) && swipe.taskId && completeEnabled) {
+    const horizontalEnough = Math.abs(dx) > Math.abs(dy) * 1.2;
+    const gestureAge = Date.now() - (swipe.startAt || Date.now());
+    if (dx > 76 && horizontalEnough && swipe.taskId && completeEnabled && gestureAge > 60) {
       this._suppressTaskClickUntil = Date.now() + 500;
       await this._quickMoveTaskToCompleted(swipe.taskId);
-    } else if (dx < -70 && Math.abs(dx) > Math.abs(dy) && swipe.taskId && deleteEnabled) {
+    } else if (dx < -76 && horizontalEnough && swipe.taskId && deleteEnabled && gestureAge > 60) {
       this._suppressTaskClickUntil = Date.now() + 500;
       await this._quickDeleteTask(swipe.taskId, { viaSwipe: true });
     }
@@ -1264,8 +1268,7 @@ class HouseholdChoresCard extends HTMLElement {
       return { ...person, role: nextRole };
     });
     if (!changed) return;
-    this._render();
-    await this._saveBoard();
+    this._queuePersonColorSave();
   }
 
   _queuePersonColorSave() {
@@ -2119,12 +2122,16 @@ class HouseholdChoresCard extends HTMLElement {
         ${items
           .slice(0, 8)
           .map((item) => {
-            const dots = (item.task.assignees || [])
+            const people = (item.task.assignees || [])
               .map((personId) => this._board.people.find((person) => person.id === personId))
-              .filter(Boolean)
+              .filter(Boolean);
+            const maxDots = 4;
+            const dots = people
+              .slice(0, maxDots)
               .map((person) => `<span class="upcoming-dot" style="background:${person.color}" title="${this._escape(person.name)}"></span>`)
               .join("");
-            return `<span class="upcoming-pill"><strong>${this._escape(this._labelForColumn(item.dayKey))}</strong><span>${this._escape(item.task.title)}</span>${dots ? `<span class="upcoming-dots">${dots}</span>` : ""}</span>`;
+            const remaining = Math.max(0, people.length - maxDots);
+            return `<span class="upcoming-pill"><strong>${this._escape(this._labelForColumn(item.dayKey))}</strong><span class="upcoming-title">${this._escape(item.task.title)}</span>${dots ? `<span class="upcoming-dots">${dots}${remaining ? `<span class="upcoming-more">+${remaining}</span>` : ""}</span>` : ""}</span>`;
           })
           .join("")}
       </div>
@@ -2407,8 +2414,10 @@ class HouseholdChoresCard extends HTMLElement {
         .upcoming-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#64748b}
         .upcoming-pill{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #dbe3ef;border-radius:999px;padding:3px 8px;font-size:.75rem;color:#334155;max-height:26px}
         .upcoming-pill strong{font-size:.72rem;color:#475569}
+        .upcoming-title{max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .upcoming-dots{display:inline-flex;align-items:center;gap:3px;margin-left:2px}
         .upcoming-dot{width:8px;height:8px;border-radius:999px;display:inline-block;box-shadow:inset 0 -1px 0 rgba(0,0,0,.15)}
+        .upcoming-more{font-size:.68rem;color:#64748b;font-weight:700}
         .quick-templates{margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
         .quick-label{font-size:.72rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
         .quick-template-btn{height:28px;padding:0 10px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:.74rem}
