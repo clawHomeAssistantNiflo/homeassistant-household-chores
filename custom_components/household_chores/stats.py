@@ -30,6 +30,13 @@ def _week_number(day_value: date) -> int:
     return int(day_value.isocalendar()[1])
 
 
+def _parse_iso_day(value: str) -> date | None:
+    try:
+        return date.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def week_bounds(offset: int = 0) -> tuple[str, str, int]:
     """Return selected week start/end iso + week number."""
     today = dt_util.as_local(dt_util.utcnow()).date()
@@ -76,7 +83,12 @@ def person_week_stats(board: dict[str, Any], person_id: str, week_offset: int = 
 
         column = str(raw.get("column") or "monday").lower()
         task_week_start = str(raw.get("week_start") or selected_start_iso)
-        if task_week_start != selected_start_iso:
+        task_week_day = _parse_iso_day(task_week_start)
+        if task_week_day is None:
+            normalized_task_start = selected_start
+        else:
+            normalized_task_start = _start_of_week(task_week_day, 0)
+        if normalized_task_start != selected_start:
             continue
         if column not in WEEKDAY_INDEX and column != "done":
             continue
