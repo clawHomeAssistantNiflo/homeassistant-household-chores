@@ -12,6 +12,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - On compact/mobile screens, `Completed` tasks switch to a responsive card grid (no forced overflow cards)
 - Header is simplified: week navigator + people strip (tap people strip to manage household members)
 - Active person filter is shown as a compact chip near week controls (tap chip to clear quickly)
+- Focus mode is now segmented (`All`, `Adults`, `Children`, `Person`) for faster tablet filtering
 - Settings gear in header opens board-level configuration modal
 - `Completed` lane is intentionally compact for tablet overview
 - Each lane card acts as a hidden quick-add area:
@@ -22,6 +23,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
   - board title
   - compact mode (denser tablet layout)
   - labels for weekdays + completed
+  - quick template library (add/remove reusable task titles)
   - weekly reset day/time
   - live automation summary (`Weekly reset: <day hh:mm>`, `Completed cleanup: Weekly with board reset`)
   - theme presets (`light`, `dark`, `colorful`)
@@ -49,6 +51,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Enabled submit buttons (`Add`, `Create`, `Save`) use blue styling for clearer state contrast
 - Modal input focus is preserved during card re-renders (typing no longer drops focus mid-edit)
 - Click any task to edit title/assignees/day/end date in modal
+- Swipe right on a task card to instantly move it to `Completed` (tablet gesture)
 - Delete task directly from the edit modal
 - Drag people badges directly onto tasks to assign quickly
 - Full person names are shown in the top People row
@@ -60,6 +63,7 @@ Household Chores is a HACS-installable custom integration for a weekly household
 - Weekday selection is always available in task modal; selecting weekdays hides single-column selector
 - Without `Fixed until date`, selected weekdays create one-off tasks for this week and do not require end date
 - Drag-and-drop tasks between weekdays and completed
+- Quick template bar under People lets you open prefilled task creation in one tap
 - Persistent board data stored in Home Assistant (`.storage`)
 
 ## Install (HACS)

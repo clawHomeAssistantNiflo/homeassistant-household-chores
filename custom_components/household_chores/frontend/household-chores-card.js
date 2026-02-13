@@ -26,15 +26,19 @@ class HouseholdChoresCard extends HTMLElement {
     this._weekOffset = 0;
     this._maxWeekOffset = 3;
     this._swipeStartX = null;
+    this._taskSwipe = null;
+    this._suppressTaskClickUntil = 0;
     this._taskFormOriginal = null;
     this._taskFormDirty = false;
     this._personFilter = "all";
+    this._personFilterSelection = "";
     this._undoState = null;
     this._undoTimer = null;
     this._dataExportText = "";
     this._dataImportText = "";
     this._dataImportError = "";
     this._lastSyncedBoard = null;
+    this._newQuickTemplateName = "";
 
     this._taskForm = this._emptyTaskForm("add");
     this._settingsForm = this._emptySettingsForm();
@@ -126,6 +130,7 @@ class HouseholdChoresCard extends HTMLElement {
         sunday: "Sun",
       },
       weekly_refresh: { weekday: 6, hour: 0, minute: 30 },
+      quick_templates: [],
     };
   }
 
@@ -384,6 +389,9 @@ class HouseholdChoresCard extends HTMLElement {
           ...this._defaultSettings().weekly_refresh,
           ...(settings.weekly_refresh || {}),
         },
+        quick_templates: Array.isArray(settings.quick_templates)
+          ? [...new Set(settings.quick_templates.map((item) => String(item || "").trim()).filter(Boolean))].slice(0, 24)
+          : [...this._defaultSettings().quick_templates],
       },
       updated_at: String(board?.updated_at || ""),
     };
@@ -489,16 +497,33 @@ class HouseholdChoresCard extends HTMLElement {
 
   _setPersonFilter(filterValue) {
     const value = String(filterValue || "all");
-    if (value !== "all" && !this._board.people.some((p) => String(p.id) === value)) {
-      this._personFilter = "all";
+    if (value === "all" || value === "adults" || value === "children") {
+      this._personFilter = value;
       return;
     }
-    this._personFilter = value;
+    if (value.startsWith("person:")) {
+      const personId = value.slice("person:".length);
+      if (this._board.people.some((p) => String(p.id) === personId)) {
+        this._personFilter = value;
+        this._personFilterSelection = personId;
+        return;
+      }
+    }
+    this._personFilter = "all";
   }
 
   _tasksVisibleByFilter(tasks) {
     if (this._personFilter === "all") return tasks;
-    return tasks.filter((task) => Array.isArray(task.assignees) && task.assignees.includes(this._personFilter));
+    const roleById = new Map(this._board.people.map((person) => [String(person.id), person.role === "child" ? "child" : "adult"]));
+    if (this._personFilter === "adults" || this._personFilter === "children") {
+      const wanted = this._personFilter === "children" ? "child" : "adult";
+      return tasks.filter((task) => Array.isArray(task.assignees) && task.assignees.some((id) => roleById.get(String(id)) === wanted));
+    }
+    if (this._personFilter.startsWith("person:")) {
+      const personId = this._personFilter.slice("person:".length);
+      return tasks.filter((task) => Array.isArray(task.assignees) && task.assignees.includes(personId));
+    }
+    return tasks;
   }
 
   async _resolveEntryId() {
@@ -851,6 +876,7 @@ class HouseholdChoresCard extends HTMLElement {
 
   _openSettingsModal() {
     this._settingsForm = this._emptySettingsForm();
+    this._newQuickTemplateName = "";
     this._dataExportText = JSON.stringify(this._board, null, 2);
     this._dataImportText = "";
     this._dataImportError = "";
@@ -861,6 +887,7 @@ class HouseholdChoresCard extends HTMLElement {
   _closeSettingsModal() {
     this._showSettingsModal = false;
     this._settingsForm = this._emptySettingsForm();
+    this._newQuickTemplateName = "";
     this._render();
   }
 
@@ -875,11 +902,128 @@ class HouseholdChoresCard extends HTMLElement {
     this._settingsForm = next;
   }
 
+  _onQuickTemplateInput(value) {
+    this._newQuickTemplateName = String(value || "");
+    this._render();
+  }
+
+  _canAddQuickTemplate() {
+    const name = String(this._newQuickTemplateName || "").trim();
+    if (!name) return false;
+    const existing = Array.isArray(this._settingsForm?.quick_templates) ? this._settingsForm.quick_templates : [];
+    return !existing.some((item) => String(item).toLowerCase() === name.toLowerCase());
+  }
+
+  _onAddQuickTemplate() {
+    if (!this._canAddQuickTemplate()) return;
+    const next = JSON.parse(JSON.stringify(this._settingsForm || this._defaultSettings()));
+    const name = String(this._newQuickTemplateName || "").trim();
+    const current = Array.isArray(next.quick_templates) ? next.quick_templates : [];
+    next.quick_templates = [...current, name].slice(0, 24);
+    this._settingsForm = next;
+    this._newQuickTemplateName = "";
+    this._render();
+  }
+
+  _onRemoveQuickTemplate(index) {
+    const next = JSON.parse(JSON.stringify(this._settingsForm || this._defaultSettings()));
+    const current = Array.isArray(next.quick_templates) ? next.quick_templates : [];
+    next.quick_templates = current.filter((_, idx) => idx !== index);
+    this._settingsForm = next;
+    this._render();
+  }
+
+  _openAddTaskFromQuickTemplate(templateName) {
+    const title = String(templateName || "").trim();
+    if (!title) return;
+    this._taskForm = {
+      ...this._emptyTaskForm("add"),
+      title,
+      column: "monday",
+    };
+    this._taskFormOriginal = null;
+    this._taskFormDirty = false;
+    this._showTaskModal = true;
+    this._render();
+  }
+
+  async _quickMoveTaskToCompleted(taskId) {
+    const task = this._board.tasks.find((item) => item.id === taskId);
+    if (!task || task.virtual || task.column === "done") return;
+    const snapshot = this._snapshotBoard();
+    task.column = "done";
+    task.week_start = this._weekStartIso(this._weekOffset);
+    task.week_number = this._weekNumberForOffset(this._weekOffset);
+    this._reindexAllColumns();
+    this._setUndo("Task moved to Completed", snapshot);
+    this._render();
+    await this._saveBoard();
+  }
+
+  async _onSaveTaskTitleAsQuickTemplate() {
+    const title = String(this._taskForm?.title || "").trim();
+    if (!title) return;
+    const nextSettings = JSON.parse(JSON.stringify(this._board.settings || this._defaultSettings()));
+    const current = Array.isArray(nextSettings.quick_templates) ? nextSettings.quick_templates : [];
+    if (!current.some((item) => String(item).toLowerCase() === title.toLowerCase())) {
+      nextSettings.quick_templates = [...current, title].slice(0, 24);
+      this._board.settings = nextSettings;
+      this._render();
+      await this._saveBoard();
+    }
+  }
+
+  _onTaskTouchStart(taskEl, ev) {
+    if (!ev.touches || ev.touches.length !== 1) return;
+    const isVirtual = taskEl.dataset.virtual === "1";
+    if (isVirtual) return;
+    this._taskSwipe = {
+      taskId: taskEl.dataset.taskId || "",
+      startX: ev.touches[0].clientX,
+      startY: ev.touches[0].clientY,
+      active: true,
+      moved: false,
+    };
+  }
+
+  _onTaskTouchMove(taskEl, ev) {
+    if (!this._taskSwipe?.active || !ev.touches || ev.touches.length !== 1) return;
+    const dx = ev.touches[0].clientX - this._taskSwipe.startX;
+    const dy = ev.touches[0].clientY - this._taskSwipe.startY;
+    if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+    this._taskSwipe.moved = true;
+    if (Math.abs(dx) > Math.abs(dy) && dx > 0) {
+      ev.preventDefault();
+      taskEl.style.transform = `translateX(${Math.min(56, dx)}px)`;
+      taskEl.style.transition = "transform 80ms linear";
+    }
+  }
+
+  async _onTaskTouchEnd(taskEl, ev) {
+    if (!this._taskSwipe?.active) return;
+    const swipe = this._taskSwipe;
+    this._taskSwipe = null;
+    taskEl.style.transform = "";
+    taskEl.style.transition = "";
+    if (!ev.changedTouches || !ev.changedTouches.length) return;
+    const endX = ev.changedTouches[0].clientX;
+    const endY = ev.changedTouches[0].clientY;
+    const dx = endX - swipe.startX;
+    const dy = endY - swipe.startY;
+    if (dx > 70 && Math.abs(dx) > Math.abs(dy) && swipe.taskId) {
+      this._suppressTaskClickUntil = Date.now() + 500;
+      await this._quickMoveTaskToCompleted(swipe.taskId);
+    }
+  }
+
   async _onSubmitSettings(ev) {
     ev.preventDefault();
     const next = JSON.parse(JSON.stringify(this._settingsForm || this._defaultSettings()));
     next.theme = ["light", "dark", "colorful"].includes(next.theme) ? next.theme : "light";
     next.compact_mode = Boolean(next.compact_mode);
+    next.quick_templates = Array.isArray(next.quick_templates)
+      ? [...new Set(next.quick_templates.map((item) => String(item || "").trim()).filter(Boolean))].slice(0, 24)
+      : [];
     this._board.settings = next;
     this._showSettingsModal = false;
     this._render();
@@ -1078,6 +1222,12 @@ class HouseholdChoresCard extends HTMLElement {
 
     const taskSubmit = this.shadowRoot?.querySelector("#task-submit");
     if (taskSubmit) taskSubmit.disabled = !this._canSubmitTaskForm();
+
+    const saveTemplateBtn = this.shadowRoot?.querySelector("#save-task-as-template");
+    if (saveTemplateBtn) {
+      const title = String(this._taskForm?.title || "").trim();
+      saveTemplateBtn.disabled = !title;
+    }
   }
 
   _captureFocusState() {
@@ -1491,28 +1641,52 @@ class HouseholdChoresCard extends HTMLElement {
   }
 
   _renderAssigneeFilter() {
-    const options = [
-      `<option value="all" ${this._personFilter === "all" ? "selected" : ""}>All</option>`,
-      ...this._board.people.map((person) => `<option value="${this._escape(String(person.id))}" ${this._personFilter === String(person.id) ? "selected" : ""}>${this._escape(person.name)}</option>`),
-    ];
+    const selectedPersonId = this._personFilter.startsWith("person:") ? this._personFilter.slice("person:".length) : this._personFilterSelection;
     return `
       <div class="assignee-filter">
-        <label for="assignee-filter-select">Tasks</label>
-        <select id="assignee-filter-select">${options.join("")}</select>
+        <label>Focus</label>
+        <div class="focus-segments" role="tablist" aria-label="Task focus">
+          <button type="button" class="focus-segment ${this._personFilter === "all" ? "active" : ""}" data-focus-filter="all">All</button>
+          <button type="button" class="focus-segment ${this._personFilter === "adults" ? "active" : ""}" data-focus-filter="adults">Adults</button>
+          <button type="button" class="focus-segment ${this._personFilter === "children" ? "active" : ""}" data-focus-filter="children">Children</button>
+          <button type="button" class="focus-segment ${this._personFilter.startsWith("person:") ? "active" : ""}" data-focus-filter="person">Person</button>
+        </div>
+        <select id="person-focus-select" ${this._personFilter.startsWith("person:") ? "" : "hidden"}>
+          <option value="">Select person</option>
+          ${this._board.people.map((person) => `<option value="${this._escape(String(person.id))}" ${selectedPersonId === String(person.id) ? "selected" : ""}>${this._escape(person.name)}</option>`).join("")}
+        </select>
       </div>
     `;
   }
 
   _renderActiveFilterChip() {
     if (this._personFilter === "all") return "";
-    const person = this._board.people.find((p) => String(p.id) === this._personFilter);
-    if (!person) return "";
+    if (this._personFilter === "adults") {
+      return `<button class="filter-chip" type="button" id="clear-filter" title="Clear filter"><span>Adults</span><span class="clear-mark">x</span></button>`;
+    }
+    if (this._personFilter === "children") {
+      return `<button class="filter-chip" type="button" id="clear-filter" title="Clear filter"><span>Children</span><span class="clear-mark">x</span></button>`;
+    }
+    const personId = this._personFilter.startsWith("person:") ? this._personFilter.slice("person:".length) : "";
+    const person = this._board.people.find((p) => String(p.id) === personId);
+    if (!person) return `<button class="filter-chip" type="button" id="clear-filter" title="Clear filter"><span>Person</span><span class="clear-mark">x</span></button>`;
     return `
       <button class="filter-chip" type="button" id="clear-filter" title="Clear filter">
         <span class="chip" style="background:${person.color}">${this._personInitial(person.name)}</span>
         <span>${this._escape(person.name)}</span>
         <span class="clear-mark">x</span>
       </button>
+    `;
+  }
+
+  _renderQuickTemplatesBar() {
+    const templates = Array.isArray(this._board?.settings?.quick_templates) ? this._board.settings.quick_templates : [];
+    if (!templates.length) return "";
+    return `
+      <div class="quick-templates" aria-label="Quick templates">
+        <span class="quick-label">Quick add</span>
+        ${templates.map((name) => `<button type="button" class="quick-template-btn" data-quick-template="${this._escape(name)}">${this._escape(name)}</button>`).join("")}
+      </div>
     `;
   }
 
@@ -1554,6 +1728,7 @@ class HouseholdChoresCard extends HTMLElement {
             </div>
             <div class="small">Without fixed: selected weekdays create one-off tasks for this week and do not require end date.</div>
             ${form.mode === "edit" && form.templateId ? `<label class="delete-series"><input id="task-delete-series" type="checkbox" ${form.deleteSeries ? "checked" : ""} /> Delete entire fixed series</label><div class="small">Unchecked = delete only this week occurrence.</div>` : ""}
+            ${form.mode === "add" ? `<div class="settings-inline"><button type="button" id="save-task-as-template" ${form.title.trim() ? "" : "disabled"}>Save title as quick template</button></div>` : ""}
             <div class="modal-actions">
               ${form.mode === "edit" ? '<button type="button" class="danger" id="delete-task">Delete</button>' : ""}
               <button id="task-submit" type="submit" ${this._canSubmitTaskForm() ? "" : "disabled"}>${this._saving ? "Saving..." : form.mode === "edit" ? "Save" : "Create"}</button>
@@ -1623,6 +1798,22 @@ class HouseholdChoresCard extends HTMLElement {
               <h4>Labels</h4>
               <div class="settings-grid labels-grid compact">
                 ${this._columns().map((col) => `<label class="settings-field"><span>${this._escape(col.label)}</span><input data-label-key="${col.key}" data-focus-key="label-${col.key}" type="text" value="${this._escape(form.labels?.[col.key] || this._labelForColumn(col.key))}" /></label>`).join("")}
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <h4>Quick Templates</h4>
+              <div class="settings-inline">
+                <input id="settings-quick-template-input" data-focus-key="settings-quick-template-input" type="text" placeholder="Template name" value="${this._escape(this._newQuickTemplateName)}" />
+                <button type="button" id="settings-add-quick-template" ${this._canAddQuickTemplate() ? "" : "disabled"}>Add</button>
+              </div>
+              <div class="quick-template-list">
+                ${(Array.isArray(form.quick_templates) ? form.quick_templates : []).map((item, index) => `
+                  <span class="quick-template-pill">
+                    <span>${this._escape(item)}</span>
+                    <button type="button" data-remove-quick-template="${index}" title="Remove template">x</button>
+                  </span>
+                `).join("") || '<span class="small">No quick templates yet.</span>'}
               </div>
             </section>
 
@@ -1710,6 +1901,9 @@ class HouseholdChoresCard extends HTMLElement {
         .assignee-filter{display:flex;align-items:center;gap:6px}
         .assignee-filter label{font-size:.74rem;color:#64748b;font-weight:600}
         .assignee-filter select{padding:6px 8px;min-width:120px;height:34px}
+        .focus-segments{display:inline-flex;align-items:center;gap:4px;background:#f1f5f9;border:1px solid #dbe3ef;border-radius:999px;padding:3px}
+        .focus-segment{height:28px;padding:0 10px;border:0;background:transparent;border-radius:999px;font-size:.74rem;color:#475569;cursor:pointer}
+        .focus-segment.active{background:#2563eb;color:#fff;font-weight:700}
         .filter-chip{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 10px 0 6px;border-radius:999px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;font-size:.76rem;font-weight:600}
         .filter-chip .chip{width:18px;height:18px;font-size:.62rem}
         .filter-chip .clear-mark{font-weight:700;color:#334155}
@@ -1726,6 +1920,9 @@ class HouseholdChoresCard extends HTMLElement {
         .people-strip:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
         .people-strip-label{font-size:.76rem;font-weight:700;color:#334155;margin-right:2px}
         .people-strip-empty{font-size:.78rem;color:#64748b}
+        .quick-templates{margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+        .quick-label{font-size:.72rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+        .quick-template-btn{height:28px;padding:0 10px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:.74rem}
         button:disabled{background:#e2e8f0 !important;color:#64748b !important;border-color:#cbd5e1 !important;cursor:not-allowed;opacity:1}
         #person-submit,#task-submit{background:#2563eb;color:#fff;border-color:#1d4ed8;font-weight:700}
         #person-submit:not(:disabled):hover,#task-submit:not(:disabled):hover{background:#1d4ed8}
@@ -1821,6 +2018,9 @@ class HouseholdChoresCard extends HTMLElement {
         .settings-switch{display:flex;align-items:center;gap:8px;font-size:.78rem;color:#334155;font-weight:600}
         .settings-switch input{width:16px;height:16px;padding:0}
         .settings-inline{display:flex;align-items:center;gap:8px}
+        .quick-template-list{display:flex;gap:6px;flex-wrap:wrap}
+        .quick-template-pill{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #dbe3ef;border-radius:999px;padding:4px 8px;font-size:.76rem;color:#334155}
+        .quick-template-pill button{height:20px;min-width:20px;padding:0;border-radius:999px;border:1px solid #cbd5e1;background:#f8fafc;color:#64748b}
         .schedule-list{display:grid;gap:6px}
         .schedule-row{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #dbe3ef;border-radius:10px;padding:8px 10px}
         .schedule-label{font-size:.78rem;color:#64748b;font-weight:600}
@@ -1833,6 +2033,7 @@ class HouseholdChoresCard extends HTMLElement {
         @media (max-width:900px){
           .top-row{grid-template-columns:1fr}
           .header-actions{justify-content:space-between}
+          .assignee-filter{flex-wrap:wrap}
           .side-columns{grid-template-columns:1fr}
           .column h3{font-size:.76rem}
           .task-title{font-size:.73rem}
@@ -1891,6 +2092,7 @@ class HouseholdChoresCard extends HTMLElement {
                   : `<span class="people-strip-empty">Tap to add people</span>`
               }
             </div>
+            ${this._renderQuickTemplatesBar()}
           </div>
 
           <div class="columns-wrap">
@@ -1936,14 +2138,20 @@ class HouseholdChoresCard extends HTMLElement {
     const taskEndDateInput = this.shadowRoot.querySelector("#task-end-date");
     const taskFixedInput = this.shadowRoot.querySelector("#task-fixed");
     const taskDeleteSeriesInput = this.shadowRoot.querySelector("#task-delete-series");
+    const saveTaskAsTemplateBtn = this.shadowRoot.querySelector("#save-task-as-template");
     const deleteTaskBtn = this.shadowRoot.querySelector("#delete-task");
     const closeSettingsBtn = this.shadowRoot.querySelector("#close-settings");
     const deletePersonButtons = this.shadowRoot.querySelectorAll("[data-delete-person-id]");
     const personRoleSelects = this.shadowRoot.querySelectorAll("[data-person-role-id]");
     const personColorSelects = this.shadowRoot.querySelectorAll("[data-person-color-id]");
-    const assigneeFilterSelect = this.shadowRoot.querySelector("#assignee-filter-select");
+    const focusFilterButtons = this.shadowRoot.querySelectorAll("[data-focus-filter]");
+    const personFocusSelect = this.shadowRoot.querySelector("#person-focus-select");
     const clearFilterBtn = this.shadowRoot.querySelector("#clear-filter");
+    const quickTemplateButtons = this.shadowRoot.querySelectorAll("[data-quick-template]");
     const undoActionBtn = this.shadowRoot.querySelector("#undo-action-btn");
+    const settingsQuickTemplateInput = this.shadowRoot.querySelector("#settings-quick-template-input");
+    const settingsAddQuickTemplateBtn = this.shadowRoot.querySelector("#settings-add-quick-template");
+    const settingsRemoveQuickTemplateBtns = this.shadowRoot.querySelectorAll("[data-remove-quick-template]");
 
     if (openPeopleBtn) {
       openPeopleBtn.addEventListener("click", () => this._openPeopleModal());
@@ -1955,13 +2163,32 @@ class HouseholdChoresCard extends HTMLElement {
       });
     }
     if (openSettingsBtn) openSettingsBtn.addEventListener("click", () => this._openSettingsModal());
-    if (assigneeFilterSelect) assigneeFilterSelect.addEventListener("change", (ev) => {
-      this._setPersonFilter(ev.target.value);
+    focusFilterButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const mode = btn.dataset.focusFilter || "all";
+        if (mode === "person") {
+          const personId = this._personFilter.startsWith("person:")
+            ? this._personFilter.slice("person:".length)
+            : (this._personFilterSelection || this._board.people[0]?.id || "");
+          this._setPersonFilter(personId ? `person:${personId}` : "all");
+        } else {
+          this._setPersonFilter(mode);
+        }
+        this._render();
+      });
+    });
+    if (personFocusSelect) personFocusSelect.addEventListener("change", (ev) => {
+      const personId = String(ev.target.value || "");
+      this._personFilterSelection = personId;
+      this._setPersonFilter(personId ? `person:${personId}` : "all");
       this._render();
     });
     if (clearFilterBtn) clearFilterBtn.addEventListener("click", () => {
       this._setPersonFilter("all");
       this._render();
+    });
+    quickTemplateButtons.forEach((btn) => {
+      btn.addEventListener("click", () => this._openAddTaskFromQuickTemplate(btn.dataset.quickTemplate || ""));
     });
     if (undoActionBtn) undoActionBtn.addEventListener("click", async () => this._undoLastAction());
     if (weekPrevBtn) weekPrevBtn.addEventListener("click", () => this._shiftWeek(-1));
@@ -1985,6 +2212,11 @@ class HouseholdChoresCard extends HTMLElement {
     if (settingsRefreshHour) settingsRefreshHour.addEventListener("input", (ev) => this._onSettingsFieldInput(["weekly_refresh", "hour"], Number(ev.target.value)));
     if (settingsRefreshMinute) settingsRefreshMinute.addEventListener("input", (ev) => this._onSettingsFieldInput(["weekly_refresh", "minute"], Number(ev.target.value)));
     if (settingsImportJson) settingsImportJson.addEventListener("input", (ev) => this._onImportBoardInput(ev));
+    if (settingsQuickTemplateInput) settingsQuickTemplateInput.addEventListener("input", (ev) => this._onQuickTemplateInput(ev.target.value));
+    if (settingsAddQuickTemplateBtn) settingsAddQuickTemplateBtn.addEventListener("click", () => this._onAddQuickTemplate());
+    settingsRemoveQuickTemplateBtns.forEach((btn) => {
+      btn.addEventListener("click", () => this._onRemoveQuickTemplate(Number(btn.dataset.removeQuickTemplate)));
+    });
     if (copyExportJsonBtn) copyExportJsonBtn.addEventListener("click", async () => this._onCopyExportJson());
     if (importBoardJsonBtn) importBoardJsonBtn.addEventListener("click", async (ev) => this._onImportBoard(ev));
     if (settingsExportJson) settingsExportJson.addEventListener("focus", (ev) => ev.target.select());
@@ -2004,6 +2236,7 @@ class HouseholdChoresCard extends HTMLElement {
       });
     }
     if (taskDeleteSeriesInput) taskDeleteSeriesInput.addEventListener("change", (ev) => this._onTaskDeleteSeriesInput(ev.target.checked));
+    if (saveTaskAsTemplateBtn) saveTaskAsTemplateBtn.addEventListener("click", async () => this._onSaveTaskTitleAsQuickTemplate());
     if (deleteTaskBtn) deleteTaskBtn.addEventListener("click", () => this._onDeleteTask());
     deletePersonButtons.forEach((btn) => {
       btn.addEventListener("click", () => this._onDeletePerson(btn.dataset.deletePersonId));
@@ -2054,6 +2287,7 @@ class HouseholdChoresCard extends HTMLElement {
 
       taskEl.addEventListener("click", () => {
         if (this._draggingTask) return;
+        if (Date.now() < this._suppressTaskClickUntil) return;
         if (isVirtual && templateId) {
           this._openEditTemplateModal(templateId, taskColumn);
           return;
@@ -2061,6 +2295,10 @@ class HouseholdChoresCard extends HTMLElement {
         if (isVirtual) return;
         this._openEditTaskModal(taskId);
       });
+
+      taskEl.addEventListener("touchstart", (ev) => this._onTaskTouchStart(taskEl, ev), { passive: true });
+      taskEl.addEventListener("touchmove", (ev) => this._onTaskTouchMove(taskEl, ev), { passive: false });
+      taskEl.addEventListener("touchend", (ev) => this._onTaskTouchEnd(taskEl, ev), { passive: true });
 
       taskEl.addEventListener("dragover", (ev) => {
         if (ev.dataTransfer.types.includes("text/person")) ev.preventDefault();

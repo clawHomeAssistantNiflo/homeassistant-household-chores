@@ -321,6 +321,7 @@ class HouseholdBoardStore:
                 "hour": int(self._refresh_hour),
                 "minute": int(self._refresh_minute),
             },
+            "quick_templates": [],
         }
 
     def _normalize_board(self, board: dict[str, Any]) -> dict[str, Any]:
@@ -459,6 +460,11 @@ class HouseholdBoardStore:
                 "hour": max(0, min(23, _safe_int(weekly_raw.get("hour"), default_settings["weekly_refresh"]["hour"]))),
                 "minute": max(0, min(59, _safe_int(weekly_raw.get("minute"), default_settings["weekly_refresh"]["minute"]))),
             },
+            "quick_templates": [
+                str(item).strip()
+                for item in raw_settings.get("quick_templates", default_settings["quick_templates"])
+                if str(item).strip()
+            ][:24],
         }
         if settings["theme"] not in {"light", "dark", "colorful"}:
             settings["theme"] = default_settings["theme"]
