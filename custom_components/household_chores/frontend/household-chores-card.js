@@ -210,6 +210,31 @@ class HouseholdChoresCard extends HTMLElement {
     return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw.toLowerCase() : fallback;
   }
 
+  _hexToRgba(hex, alpha = 1) {
+    const raw = String(hex || "").trim();
+    if (!/^#[0-9a-fA-F]{6}$/.test(raw)) return "";
+    const r = Number.parseInt(raw.slice(1, 3), 16);
+    const g = Number.parseInt(raw.slice(3, 5), 16);
+    const b = Number.parseInt(raw.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  _spanBarColors(assignees) {
+    const fallback = {
+      bg: "#e8f7ef",
+      border: "#b9e7ce",
+      text: "#0f172a",
+    };
+    const ids = Array.isArray(assignees) ? assignees : [];
+    if (ids.length !== 1) return fallback;
+    const person = this._board.people.find((p) => p.id === ids[0]);
+    if (!person?.color) return fallback;
+    const border = String(person.color).trim();
+    const bg = this._hexToRgba(border, 0.14);
+    if (!bg) return fallback;
+    return { bg, border, text: "#0f172a" };
+  }
+
   _suggestPersonColor() {
     const taken = new Set(this._board.people.map((p) => this._normalizeHexColor(p.color, "")));
     for (const color of this._personColorPresets()) {
@@ -1908,8 +1933,10 @@ class HouseholdChoresCard extends HTMLElement {
       <div class="week-span-overlay" style="--span-rows:${layout.rowCount};">
           ${layout.bars
             .map(
-              (bar) => `
-                <article class="task week-span-bar span-task span-start span-end" draggable="false" data-task-id="${bar.taskId}" data-template-id="" data-column="" data-virtual="0" style="grid-column:${bar.columnStart} / ${bar.columnEnd};grid-row:${bar.row + 1};">
+              (bar) => {
+                const colors = this._spanBarColors(bar.assignees);
+                return `
+                <article class="task week-span-bar span-task span-start span-end" draggable="false" data-task-id="${bar.taskId}" data-template-id="" data-column="" data-virtual="0" style="grid-column:${bar.columnStart} / ${bar.columnEnd};grid-row:${bar.row + 1};--span-bg:${colors.bg};--span-border:${colors.border};--span-text:${colors.text};">
                   <div class="task-head">
                     <div class="task-title">${this._escape(bar.title)}</div>
                   </div>
@@ -1926,7 +1953,8 @@ class HouseholdChoresCard extends HTMLElement {
                       .join("")}
                   </div>
                 </article>
-              `
+              `;
+              }
             )
             .join("")}
       </div>
@@ -2392,8 +2420,9 @@ class HouseholdChoresCard extends HTMLElement {
         .task.virtual-task{cursor:default;opacity:.96}
         .task.fixed-task{background:#ecf3ff;border-color:#b7cdf3;box-shadow:inset 3px 0 0 #3b82f6}
         .task.span-task{
-          background:#e8f7ef;
-          border-color:#b9e7ce;
+          background:var(--span-bg, #e8f7ef);
+          border-color:var(--span-border, #b9e7ce);
+          color:var(--span-text, #0f172a);
           box-shadow:none;
           cursor:pointer;
           padding:7px 8px;
