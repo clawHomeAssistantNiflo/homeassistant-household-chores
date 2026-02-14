@@ -104,6 +104,16 @@ type: custom:household-chores-card
 title: Household Chores
 ```
 
+### Next up (top badge)
+
+If you want a small "Next up" badge strip you can place at the very top of a dashboard, use:
+
+```yaml
+type: custom:household-chores-card
+view: next_up
+title: Household Chores
+```
+
 If you have multiple `Household Chores` config entries, include `entry_id`:
 
 ```yaml

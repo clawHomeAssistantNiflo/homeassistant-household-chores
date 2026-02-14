@@ -54,7 +54,11 @@ class HouseholdChoresCard extends HTMLElement {
     if (!config || typeof config !== "object") {
       throw new Error("Invalid card configuration");
     }
-    this._config = { title: config.title || "Household Chores", entry_id: config.entry_id || "" };
+    this._config = {
+      title: config.title || "Household Chores",
+      entry_id: config.entry_id || "",
+      view: config.view || "board", // "board" | "next_up"
+    };
     this._render();
   }
 
@@ -69,6 +73,63 @@ class HouseholdChoresCard extends HTMLElement {
 
   getCardSize() {
     return 8;
+  }
+
+  _nextUpItems(limit = 3) {
+    const todayIso = this._todayIsoDate();
+    const tasks = this._tasksVisibleByFilter(this._board.tasks || [])
+      .filter((task) => String(task.column || "").toLowerCase() !== "done")
+      .filter((task) => !task.span_id || Number(task.span_index || 0) === 0);
+
+    const byKey = new Map();
+    for (const task of tasks) {
+      const occurrence = this._taskOccurrenceDate(task);
+      if (!occurrence) continue;
+      if (occurrence < todayIso) continue;
+      const key = task.span_id ? `span:${task.span_id}:${task.week_start || ""}` : `task:${task.id}`;
+      if (!byKey.has(key)) {
+        byKey.set(key, { task, occurrence, order: Number(task.order || 0) });
+      }
+    }
+
+    return [...byKey.values()]
+      .sort((a, b) => {
+        if (a.occurrence !== b.occurrence) return a.occurrence < b.occurrence ? -1 : 1;
+        if (a.order !== b.order) return a.order - b.order;
+        return String(a.task.title || "").localeCompare(String(b.task.title || ""));
+      })
+      .slice(0, Math.max(0, Number(limit) || 0));
+  }
+
+  _renderNextUpStrip() {
+    const items = this._nextUpItems(3);
+    if (!items.length) return "";
+    return `
+      <div class="nextup-strip" role="note" aria-label="Next up tasks">
+        <span class="nextup-label">Next up</span>
+        ${items
+          .map(({ task, occurrence }) => {
+            const people = (task.assignees || [])
+              .map((personId) => this._board.people.find((person) => person.id === personId))
+              .filter(Boolean);
+            const maxDots = 4;
+            const dots = people
+              .slice(0, maxDots)
+              .map((person) => `<span class="nextup-dot" style="background:${person.color}" title="${this._escape(person.name)}"></span>`)
+              .join("");
+            const remaining = Math.max(0, people.length - maxDots);
+            const dateLabel = occurrence ? `<span class="nextup-date">${this._escape(occurrence.slice(5).replace("-", "."))}</span>` : "";
+            return `
+              <button type="button" class="nextup-pill" data-nextup-task-id="${this._escape(task.id)}" title="${this._escape(task.title)}">
+                ${dateLabel}
+                <span class="nextup-title">${this._escape(task.title)}</span>
+                ${dots ? `<span class="nextup-dots">${dots}${remaining ? `<span class="nextup-more">+${remaining}</span>` : ""}</span>` : ""}
+              </button>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
   }
 
   _columns() {
@@ -2388,12 +2449,15 @@ class HouseholdChoresCard extends HTMLElement {
     const errorHtml = this._error ? `<div class="error">${this._escape(this._error)}</div>` : "";
     const undoHtml = this._undoState ? `<div class="undo-bar"><span>${this._escape(this._undoState.label)}</span><button id="undo-action-btn" type="button">Undo</button></div>` : "";
     const upcomingHtml = this._renderUpcomingStrip();
+    const nextUpHtml = this._renderNextUpStrip();
     const theme = this._themeVars();
     const compactMode = Boolean(this._board?.settings?.compact_mode);
     const weekLaneHeight = compactMode ? 320 : 360;
     const weekTaskAreaHeight = compactMode ? 260 : 300;
     const sideLaneHeight = compactMode ? 128 : 156;
     this._spanLayoutCache = this._buildWeekSpanLayout();
+
+    const viewMode = String(this._config?.view || "board");
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -2434,6 +2498,15 @@ class HouseholdChoresCard extends HTMLElement {
         .upcoming-dots{display:inline-flex;align-items:center;gap:3px;margin-left:2px}
         .upcoming-dot{width:8px;height:8px;border-radius:999px;display:inline-block;box-shadow:inset 0 -1px 0 rgba(0,0,0,.15)}
         .upcoming-more{font-size:.68rem;color:#64748b;font-weight:700}
+        .nextup-strip{margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:12px;padding:8px 10px}
+        .nextup-label{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#64748b}
+        .nextup-pill{display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid #dbe3ef;border-radius:999px;padding:6px 10px;font-size:.78rem;color:#0f172a;cursor:pointer;max-width:100%}
+        .nextup-pill:active{transform:translateY(1px)}
+        .nextup-date{font-size:.72rem;font-weight:800;color:#475569;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;padding:2px 6px}
+        .nextup-title{max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
+        .nextup-dots{display:inline-flex;align-items:center;gap:3px;margin-left:2px}
+        .nextup-dot{width:8px;height:8px;border-radius:999px;display:inline-block;box-shadow:inset 0 -1px 0 rgba(0,0,0,.15)}
+        .nextup-more{font-size:.68rem;color:#64748b;font-weight:800}
         .quick-templates{margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
         .quick-label{font-size:.72rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
         .quick-template-btn{height:28px;padding:0 10px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:.74rem}
@@ -2628,52 +2701,59 @@ class HouseholdChoresCard extends HTMLElement {
 
       <ha-card>
         <div class="wrap">
-          <h2 class="board-title">${this._escape(this._boardTitle())}</h2>
+          ${viewMode === "board" ? `<h2 class="board-title">${this._escape(this._boardTitle())}</h2>` : ""}
           ${loadingHtml}
           ${errorHtml}
           ${undoHtml}
-          <div class="panel">
-            <div class="top-row ${upcomingHtml ? "has-upcoming" : ""}">
-              <div class="week-nav">
-                <button class="week-nav-btn" type="button" id="week-prev" ${this._weekOffset === 0 ? "disabled" : ""}>◀</button>
-                <div>
-                  <div class="week-label">Week ${this._weekNumberForOffset()}</div>
-                  <div class="week-sub">${this._weekRangeLabel()}</div>
+          ${
+            viewMode === "next_up"
+              ? `<div class="panel">${nextUpHtml || `<div class="small">No upcoming tasks</div>`}</div>`
+              : `
+                <div class="panel">
+                  <div class="top-row ${upcomingHtml ? "has-upcoming" : ""}">
+                    <div class="week-nav">
+                      <button class="week-nav-btn" type="button" id="week-prev" ${this._weekOffset === 0 ? "disabled" : ""}>◀</button>
+                      <div>
+                        <div class="week-label">Week ${this._weekNumberForOffset()}</div>
+                        <div class="week-sub">${this._weekRangeLabel()}</div>
+                      </div>
+                      <button class="week-nav-btn" type="button" id="week-next" ${this._weekOffset >= this._maxWeekOffset ? "disabled" : ""}>▶</button>
+                    </div>
+                    ${upcomingHtml ? `<div>${upcomingHtml}</div>` : ""}
+                    <div class="header-actions">
+                      <div class="swipe-hint">Swipe left/right (0..+3)</div>
+                      ${this._renderActiveFilterChip()}
+                      ${this._renderAssigneeFilter()}
+                      <button class="week-nav-btn" type="button" id="open-settings">⚙</button>
+                    </div>
+                  </div>
+                  ${nextUpHtml ? nextUpHtml : ""}
+                  ${this._renderOnboardingBanner()}
+                  <div class="people-strip" id="open-people" role="button" tabindex="0" aria-label="Open people">
+                    <span class="people-strip-label">People</span>
+                    ${
+                      this._board.people.length
+                        ? this._board.people
+                            .slice(0, 12)
+                            .map((person) => `<span class="person-pill"><span class="chip-wrap"><span class="chip" draggable="true" data-person-id="${person.id}" style="background:${person.color}" title="${this._escape(person.name)}">${this._personInitial(person.name)}</span><span class="role-badge ${person.role === "child" ? "child" : "adult"}">${this._personRoleLabel(person.role)}</span></span><span>${this._escape(person.name)}</span></span>`)
+                            .join("")
+                        : `<span class="people-strip-empty">Tap to add people</span>`
+                    }
+                  </div>
+                  ${this._renderQuickTemplatesBar()}
                 </div>
-                <button class="week-nav-btn" type="button" id="week-next" ${this._weekOffset >= this._maxWeekOffset ? "disabled" : ""}>▶</button>
-              </div>
-              ${upcomingHtml ? `<div>${upcomingHtml}</div>` : ""}
-              <div class="header-actions">
-                <div class="swipe-hint">Swipe left/right (0..+3)</div>
-                ${this._renderActiveFilterChip()}
-                ${this._renderAssigneeFilter()}
-                <button class="week-nav-btn" type="button" id="open-settings">⚙</button>
-              </div>
-            </div>
-            ${this._renderOnboardingBanner()}
-            <div class="people-strip" id="open-people" role="button" tabindex="0" aria-label="Open people">
-              <span class="people-strip-label">People</span>
-              ${
-                this._board.people.length
-                  ? this._board.people
-                      .slice(0, 12)
-                      .map((person) => `<span class="person-pill"><span class="chip-wrap"><span class="chip" draggable="true" data-person-id="${person.id}" style="background:${person.color}" title="${this._escape(person.name)}">${this._personInitial(person.name)}</span><span class="role-badge ${person.role === "child" ? "child" : "adult"}">${this._personRoleLabel(person.role)}</span></span><span>${this._escape(person.name)}</span></span>`)
-                      .join("")
-                  : `<span class="people-strip-empty">Tap to add people</span>`
-              }
-            </div>
-            ${this._renderQuickTemplatesBar()}
-          </div>
 
-          <div class="columns-wrap">
-            <div class="week-scroll">
-              <div class="week-grid-wrap">
-                ${this._renderWeekSpanOverlay()}
-                <div class="week-columns">${this._weekColumns().map((col) => this._renderColumn(col)).join("")}</div>
-              </div>
-            </div>
-            <div class="side-columns">${this._renderColumn({ key: "done", label: "Completed" })}</div>
-          </div>
+                <div class="columns-wrap">
+                  <div class="week-scroll">
+                    <div class="week-grid-wrap">
+                      ${this._renderWeekSpanOverlay()}
+                      <div class="week-columns">${this._weekColumns().map((col) => this._renderColumn(col)).join("")}</div>
+                    </div>
+                  </div>
+                  <div class="side-columns">${this._renderColumn({ key: "done", label: "Completed" })}</div>
+                </div>
+              `
+          }
         </div>
       </ha-card>
 
@@ -2686,6 +2766,7 @@ class HouseholdChoresCard extends HTMLElement {
     const openSettingsBtn = this.shadowRoot.querySelector("#open-settings");
     const weekPrevBtn = this.shadowRoot.querySelector("#week-prev");
     const weekNextBtn = this.shadowRoot.querySelector("#week-next");
+    const nextUpButtons = this.shadowRoot.querySelectorAll("[data-nextup-task-id]");
     const closePeopleBtn = this.shadowRoot.querySelector("#close-people");
     const closeTaskBtn = this.shadowRoot.querySelector("#close-task");
     const peopleBackdrop = this.shadowRoot.querySelector("#people-backdrop");
@@ -2752,6 +2833,15 @@ class HouseholdChoresCard extends HTMLElement {
       });
     }
     if (openSettingsBtn) openSettingsBtn.addEventListener("click", () => this._openSettingsModal());
+    nextUpButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const taskId = btn.dataset.nextupTaskId || btn.getAttribute("data-nextup-task-id") || "";
+        if (!taskId) return;
+        const task = this._board.tasks.find((t) => String(t.id) === String(taskId));
+        if (!task) return;
+        this._openEditTask(task);
+      });
+    });
     focusFilterButtons.forEach((btn) => {
       btn.addEventListener("click", () => {
         const mode = btn.dataset.focusFilter || "all";
