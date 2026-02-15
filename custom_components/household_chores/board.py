@@ -312,7 +312,10 @@ class HouseholdBoardStore:
             "title": "Household Chores",
             "theme": "light",
             "compact_mode": False,
+            "show_swipe_hint": False,
             "show_next_up": False,
+            "show_upcoming": True,
+            "show_quick_templates": False,
             "labels": {
                 "done": "Completed",
                 "monday": "Mon",
@@ -486,7 +489,10 @@ class HouseholdBoardStore:
             "title": str(raw_settings.get("title") or default_settings["title"]).strip() or default_settings["title"],
             "theme": str(raw_settings.get("theme") or default_settings["theme"]).lower(),
             "compact_mode": bool(raw_settings.get("compact_mode", default_settings["compact_mode"])),
+            "show_swipe_hint": bool(raw_settings.get("show_swipe_hint", default_settings["show_swipe_hint"])),
             "show_next_up": bool(raw_settings.get("show_next_up", default_settings["show_next_up"])),
+            "show_upcoming": bool(raw_settings.get("show_upcoming", default_settings["show_upcoming"])),
+            "show_quick_templates": bool(raw_settings.get("show_quick_templates", default_settings["show_quick_templates"])),
             "labels": labels,
             "weekly_refresh": {
                 "weekday": max(0, min(6, _safe_int(weekly_raw.get("weekday"), default_settings["weekly_refresh"]["weekday"]))),

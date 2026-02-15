@@ -184,7 +184,10 @@ class HouseholdChoresCard extends HTMLElement {
       title: this._config?.title || "Household Chores",
       theme: "light",
       compact_mode: false,
+      show_swipe_hint: false,
       show_next_up: false,
+      show_upcoming: true,
+      show_quick_templates: false,
       labels: {
         done: "Completed",
         monday: "Mon",
@@ -527,6 +530,9 @@ class HouseholdChoresCard extends HTMLElement {
         },
         onboarding_dismissed: Boolean(settings.onboarding_dismissed),
         show_next_up: Boolean(settings.show_next_up),
+        show_upcoming: Boolean(settings.show_upcoming ?? true),
+        show_quick_templates: Boolean(settings.show_quick_templates),
+        show_swipe_hint: Boolean(settings.show_swipe_hint),
       },
       updated_at: String(board?.updated_at || ""),
     };
@@ -1243,7 +1249,10 @@ class HouseholdChoresCard extends HTMLElement {
     const next = JSON.parse(JSON.stringify(this._settingsForm || this._defaultSettings()));
     next.theme = ["light", "dark", "colorful"].includes(next.theme) ? next.theme : "light";
     next.compact_mode = Boolean(next.compact_mode);
+    next.show_swipe_hint = Boolean(next.show_swipe_hint);
     next.show_next_up = Boolean(next.show_next_up);
+    next.show_upcoming = Boolean(next.show_upcoming ?? true);
+    next.show_quick_templates = Boolean(next.show_quick_templates);
     next.quick_templates = Array.isArray(next.quick_templates)
       ? [...new Set(next.quick_templates.map((item) => String(item || "").trim()).filter(Boolean))].slice(0, 24)
       : [];
@@ -2223,6 +2232,7 @@ class HouseholdChoresCard extends HTMLElement {
   }
 
   _renderQuickTemplatesBar() {
+    if (!this._board?.settings?.show_quick_templates) return "";
     const templates = Array.isArray(this._board?.settings?.quick_templates) ? this._board.settings.quick_templates : [];
     if (!templates.length) return "";
     return `
@@ -2350,6 +2360,30 @@ class HouseholdChoresCard extends HTMLElement {
               </label>
             </section>
 
+            <section class="settings-section settings-grid two-col">
+              <h4 style="grid-column:1/-1;margin:0 0 2px;font-size:.82rem;color:#334155;letter-spacing:.02em;text-transform:uppercase">Display</h4>
+              <label class="settings-switch">
+                <input id="settings-show-next-up" type="checkbox" ${form.show_next_up ? "checked" : ""} />
+                <span>Show Next up badges</span>
+              </label>
+              <label class="settings-switch">
+                <input id="settings-show-upcoming" type="checkbox" ${form.show_upcoming !== false ? "checked" : ""} />
+                <span>Show Upcoming</span>
+              </label>
+              <label class="settings-switch">
+                <input id="settings-show-quick-templates" type="checkbox" ${form.show_quick_templates ? "checked" : ""} />
+                <span>Show Quick templates bar</span>
+              </label>
+              <label class="settings-switch">
+                <input id="settings-show-swipe-hint" type="checkbox" ${form.show_swipe_hint ? "checked" : ""} />
+                <span>Show swipe hint</span>
+              </label>
+              <label class="settings-switch">
+                <input id="settings-show-onboarding" type="checkbox" ${form.onboarding_dismissed ? "" : "checked"} />
+                <span>Show onboarding tips</span>
+              </label>
+            </section>
+
             <section class="settings-section">
               <h4>Labels</h4>
               <div class="settings-grid labels-grid compact">
@@ -2381,14 +2415,6 @@ class HouseholdChoresCard extends HTMLElement {
               <label class="settings-switch">
                 <input id="settings-swipe-delete" type="checkbox" ${form.gestures?.swipe_delete ? "checked" : ""} />
                 <span>Swipe left to Delete</span>
-              </label>
-              <label class="settings-switch">
-                <input id="settings-show-next-up" type="checkbox" ${form.show_next_up ? "checked" : ""} />
-                <span>Show Next up badges</span>
-              </label>
-              <label class="settings-switch">
-                <input id="settings-show-onboarding" type="checkbox" ${form.onboarding_dismissed ? "" : "checked"} />
-                <span>Show onboarding tips</span>
               </label>
             </section>
 
@@ -2459,7 +2485,7 @@ class HouseholdChoresCard extends HTMLElement {
     const loadingHtml = this._loading ? `<div class="loading">Loading board...</div>` : "";
     const errorHtml = this._error ? `<div class="error">${this._escape(this._error)}</div>` : "";
     const undoHtml = this._undoState ? `<div class="undo-bar"><span>${this._escape(this._undoState.label)}</span><button id="undo-action-btn" type="button">Undo</button></div>` : "";
-    const upcomingHtml = this._renderUpcomingStrip();
+    const upcomingHtml = this._board?.settings?.show_upcoming ? this._renderUpcomingStrip() : "";
     const nextUpEnabled = Boolean(this._board?.settings?.show_next_up);
     const nextUpHtml = nextUpEnabled ? this._renderNextUpStrip() : "";
     const theme = this._themeVars();
@@ -2733,7 +2759,7 @@ class HouseholdChoresCard extends HTMLElement {
                     </div>
                     ${upcomingHtml ? `<div>${upcomingHtml}</div>` : ""}
                     <div class="header-actions">
-                      <div class="swipe-hint">Swipe left/right (0..+3)</div>
+                      ${this._board?.settings?.show_swipe_hint ? `<div class="swipe-hint">Swipe left/right (0..+3)</div>` : ``}
                       ${this._renderActiveFilterChip()}
                       ${this._renderAssigneeFilter()}
                       <button class="week-nav-btn" type="button" id="open-settings">⚙</button>
@@ -2793,6 +2819,9 @@ class HouseholdChoresCard extends HTMLElement {
     const settingsTheme = this.shadowRoot.querySelector("#settings-theme");
     const settingsCompactMode = this.shadowRoot.querySelector("#settings-compact-mode");
     const settingsShowNextUp = this.shadowRoot.querySelector("#settings-show-next-up");
+    const settingsShowUpcoming = this.shadowRoot.querySelector("#settings-show-upcoming");
+    const settingsShowQuickTemplates = this.shadowRoot.querySelector("#settings-show-quick-templates");
+    const settingsShowSwipeHint = this.shadowRoot.querySelector("#settings-show-swipe-hint");
     const settingsShowOnboarding = this.shadowRoot.querySelector("#settings-show-onboarding");
     const settingsWeekday = this.shadowRoot.querySelector("#settings-weekday");
     const settingsRefreshHour = this.shadowRoot.querySelector("#settings-refresh-hour");
@@ -2902,6 +2931,9 @@ class HouseholdChoresCard extends HTMLElement {
     if (settingsTheme) settingsTheme.addEventListener("change", (ev) => this._onSettingsFieldInput(["theme"], ev.target.value));
     if (settingsCompactMode) settingsCompactMode.addEventListener("change", (ev) => this._onSettingsFieldInput(["compact_mode"], ev.target.checked));
     if (settingsShowNextUp) settingsShowNextUp.addEventListener("change", (ev) => this._onSettingsFieldInput(["show_next_up"], ev.target.checked));
+    if (settingsShowUpcoming) settingsShowUpcoming.addEventListener("change", (ev) => this._onSettingsFieldInput(["show_upcoming"], ev.target.checked));
+    if (settingsShowQuickTemplates) settingsShowQuickTemplates.addEventListener("change", (ev) => this._onSettingsFieldInput(["show_quick_templates"], ev.target.checked));
+    if (settingsShowSwipeHint) settingsShowSwipeHint.addEventListener("change", (ev) => this._onSettingsFieldInput(["show_swipe_hint"], ev.target.checked));
     if (settingsShowOnboarding) settingsShowOnboarding.addEventListener("change", (ev) => this._onSettingsFieldInput(["onboarding_dismissed"], !ev.target.checked));
     if (settingsWeekday) settingsWeekday.addEventListener("change", (ev) => this._onSettingsFieldInput(["weekly_refresh", "weekday"], Number(ev.target.value)));
     if (settingsRefreshHour) settingsRefreshHour.addEventListener("input", (ev) => this._onSettingsFieldInput(["weekly_refresh", "hour"], Number(ev.target.value)));
