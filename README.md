@@ -146,9 +146,6 @@ Current UI captures from the latest tablet/compact board layout.
 ### Drag and drop between days
 ![Drag and drop state](docs/screenshots/weekly-board-drag-drop.png)
 
-### Mobile / compact
-![Mobile weekly board](docs/screenshots/weekly-board-mobile.png)
-
 ## Notes
 
 - Entity ID migration (sensors):
