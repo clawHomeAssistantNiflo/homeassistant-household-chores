@@ -1965,6 +1965,7 @@ class HouseholdChoresCard extends HTMLElement {
 
   _renderTaskCard(task) {
     const draggable = !task.virtual && !task.span_id;
+    const isCompleted = String(task.column || "").toLowerCase() === "done";
     const isSpan = Boolean(task.span_id);
     const isSpanStart = isSpan && Number(task.span_index) === 0;
     const isSpanEnd = isSpan && Number(task.span_total) > 0 && Number(task.span_index) === Number(task.span_total) - 1;
@@ -1977,7 +1978,7 @@ class HouseholdChoresCard extends HTMLElement {
       ? ""
       : ` style="--task-bg:${cardColors.bg};--task-border:${cardColors.border};--task-text:${cardColors.text};--task-accent:${cardColors.accent};"`;
     return `
-      <article class="task ${task.virtual ? "virtual-task" : ""} ${task.fixed ? "fixed-task" : ""}${spanClass}" draggable="${draggable ? "true" : "false"}" data-task-id="${task.id}" data-template-id="${task.template_id || ""}" data-column="${task.column || ""}" data-virtual="${task.virtual ? "1" : "0"}"${cardStyle}>
+      <article class="task ${task.virtual ? "virtual-task" : ""} ${task.fixed ? "fixed-task" : ""} ${isCompleted ? "completed-compact" : ""}${spanClass}" draggable="${draggable ? "true" : "false"}" data-task-id="${task.id}" data-template-id="${task.template_id || ""}" data-column="${task.column || ""}" data-virtual="${task.virtual ? "1" : "0"}"${cardStyle}>
         <div class="task-head">
           <div class="task-title">${showContent ? this._escape(task.title) : "&nbsp;"}</div>
         </div>
@@ -2589,8 +2590,27 @@ class HouseholdChoresCard extends HTMLElement {
         .week-columns .column.week-lane{min-height:${weekLaneHeight}px;max-height:${weekLaneHeight}px}
         .week-columns .column.week-lane .tasks{max-height:${weekTaskAreaHeight}px;overflow-y:auto;overflow-x:hidden;padding-right:2px}
         .side-columns .column.side-lane{min-height:${sideLaneHeight}px;max-height:${sideLaneHeight}px}
-        .side-columns .column.side-lane .tasks{display:flex;flex-direction:row;align-items:flex-start;overflow-x:auto;overflow-y:hidden;gap:6px;padding-bottom:3px}
-        .side-columns .column.side-lane .task{min-width:180px;flex:0 0 180px}
+        .side-columns .column.side-lane .tasks{
+          display:grid;
+          grid-template-columns:repeat(auto-fill,minmax(132px,1fr));
+          grid-auto-rows:minmax(56px,auto);
+          overflow-x:hidden;
+          overflow-y:auto;
+          gap:6px;
+          padding-right:2px;
+          align-content:start;
+        }
+        .side-columns .column.side-lane .task{min-width:0;width:auto;flex:none}
+        .task.completed-compact{padding:6px}
+        .task.completed-compact .task-title{
+          font-size:.74rem;
+          line-height:1.25;
+          -webkit-line-clamp:1;
+        }
+        .task.completed-compact .task-sub{display:none}
+        .task.completed-compact .task-meta{margin-top:4px;gap:3px}
+        .task.completed-compact .chip{width:16px;height:16px;font-size:.56rem}
+        .task.completed-compact .role-badge{width:10px;height:10px;font-size:7px;right:-4px;bottom:-4px}
         .column.drag-over{border-color:#2563eb;box-shadow:inset 0 0 0 1px #2563eb;background:#f0f7ff}
         .column.today-col{border-color:#93c5fd;background:linear-gradient(180deg,#eef6ff 0%, var(--hc-card) 16%)}
         .column-head{margin-bottom:8px}
@@ -2720,11 +2740,11 @@ class HouseholdChoresCard extends HTMLElement {
           .side-columns .column.side-lane{min-height:110px;max-height:110px}
           .side-columns .column.side-lane .tasks{
             display:grid;
-            grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
-            overflow-x:visible;
-            overflow-y:visible;
+            grid-template-columns:repeat(auto-fill,minmax(120px,1fr));
+            overflow-x:hidden;
+            overflow-y:auto;
             gap:6px;
-            padding-bottom:0;
+            padding-right:0;
           }
           .side-columns .column.side-lane .task{
             min-width:0;
