@@ -39,6 +39,8 @@ class HouseholdChoresCard extends HTMLElement {
     this._dataImportText = "";
     this._dataImportError = "";
     this._lastSyncedBoard = null;
+    this._lastSeenBoardUpdatedAt = "";
+    this._reloadInFlight = false;
     this._newQuickTemplateName = "";
     this._personColorSaveTimer = null;
 
@@ -67,6 +69,8 @@ class HouseholdChoresCard extends HTMLElement {
     if (!this._loadedOnce && this._config) {
       this._loadedOnce = true;
       this._loadBoard();
+    } else if (this._config?.entry_id) {
+      this._maybeRefreshFromExternalBoardUpdate();
     }
     this._render();
   }
@@ -717,6 +721,7 @@ class HouseholdChoresCard extends HTMLElement {
       const result = await this._callBoardWs({ type: "household_chores/get_board", entry_id: this._config.entry_id });
       this._board = this._normalizeBoard(result.board || { people: [], tasks: [], templates: [] });
       this._lastSyncedBoard = this._snapshotBoard();
+      this._lastSeenBoardUpdatedAt = String(this._board?.updated_at || this._lastSeenBoardUpdatedAt || "");
       this._setPersonFilter(this._personFilter);
       this._error = "";
     } catch (err) {
@@ -726,6 +731,7 @@ class HouseholdChoresCard extends HTMLElement {
         if (fallbackBoard) {
           this._board = this._normalizeBoard(fallbackBoard);
           this._lastSyncedBoard = this._snapshotBoard();
+          this._lastSeenBoardUpdatedAt = String(this._board?.updated_at || this._lastSeenBoardUpdatedAt || "");
           this._setPersonFilter(this._personFilter);
           this._error = "";
         } else {
@@ -754,6 +760,25 @@ class HouseholdChoresCard extends HTMLElement {
 
     if (entries.length === 1) return entries[0][1];
     return null;
+  }
+
+  async _maybeRefreshFromExternalBoardUpdate() {
+    if (this._reloadInFlight || this._saving || this._showTaskModal || this._showPeopleModal || this._showSettingsModal) return;
+    const state = this._findBoardStateEntity();
+    const updatedAt = String(state?.state || state?.attributes?.board?.updated_at || "");
+    if (!updatedAt) return;
+    if (!this._lastSeenBoardUpdatedAt) {
+      this._lastSeenBoardUpdatedAt = updatedAt;
+      return;
+    }
+    if (updatedAt === this._lastSeenBoardUpdatedAt) return;
+    this._lastSeenBoardUpdatedAt = updatedAt;
+    this._reloadInFlight = true;
+    try {
+      await this._loadBoard();
+    } finally {
+      this._reloadInFlight = false;
+    }
   }
 
   _loadBoardFromStateEntity() {

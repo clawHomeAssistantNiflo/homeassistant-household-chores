@@ -156,6 +156,7 @@ Current UI captures from the latest tablet/compact board layout.
 - The custom card JavaScript is auto-registered by the integration at startup.
 - Repository includes icon/logo fallback files (`icon.png`, `logo.png`, `dark_icon.png`, `dark_logo.png`) for broader HACS/UI icon compatibility.
 - JS resource is auto versioned (`?v=<manifest version>`) to reduce browser cache issues after updates.
+- External board writes (for example from Weekly Training sync) should refresh the card quickly via board-state change detection, not only after manual card actions.
 - If you update from older versions, restart Home Assistant to reload websocket commands/resources.
 - Save operations now include a fallback service (`household_chores.save_board`) if websocket save command is unavailable in runtime.
 - Load operations include a fallback via `sensor.*_board_state` attributes if websocket load command is unavailable.

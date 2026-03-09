@@ -263,7 +263,7 @@ class PersonWeekTasksSensor(SensorEntity):
 
     _attr_icon = "mdi:account-check"
     _attr_has_entity_name = False
-    _attr_should_poll = True
+    _attr_should_poll = False
 
     def __init__(self, entry: ConfigEntry, board_store: Any, person_id: str) -> None:
         self._entry = entry
@@ -361,7 +361,7 @@ class NextThreeTasksSensor(SensorEntity):
     _attr_has_entity_name = True
     _attr_name = "Next 3 tasks"
     _attr_icon = "mdi:format-list-checks"
-    _attr_should_poll = True
+    _attr_should_poll = False
 
     def __init__(self, entry: ConfigEntry, board_store: Any) -> None:
         self._entry = entry
@@ -425,7 +425,7 @@ class NextThreeTasksPersonSensor(SensorEntity):
 
     _attr_has_entity_name = False
     _attr_icon = "mdi:format-list-checks"
-    _attr_should_poll = True
+    _attr_should_poll = False
 
     def __init__(self, entry: ConfigEntry, board_store: Any, person_id: str) -> None:
         self._entry = entry
@@ -509,7 +509,7 @@ class TodayTasksSensor(SensorEntity):
     _attr_has_entity_name = True
     _attr_name = "Today's tasks"
     _attr_icon = "mdi:calendar-today"
-    _attr_should_poll = True
+    _attr_should_poll = False
 
     def __init__(self, entry: ConfigEntry, board_store: Any) -> None:
         self._entry = entry
